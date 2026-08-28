@@ -62,6 +62,25 @@ python -m flask --app app upgrade-db
 `init-db` rechaza bases que ya contienen tablas de la aplicación. Las migraciones
 autogeneradas siempre deben revisarse antes de ejecutarse.
 
+## Carga de deportes iniciales
+
+Después de crear o actualizar las tablas, ejecutar el script SQL desde la raíz del
+repositorio:
+
+```powershell
+psql -U USER -p PORT -d DATABASE -f scripts/initialize_sports.sql
+```
+
+Por ejemplo, si PostgreSQL utiliza el usuario `postgres`, el puerto `5433` y la base
+`sportsapp_db`:
+
+```powershell
+psql -U postgres -p 5433 -d sportsapp_db -f scripts/initialize_sports.sql
+```
+
+El script precarga Fútbol con 11 jugadores y Básquet con 5. Puede ejecutarse más de una
+vez porque ignora los nombres normalizados que ya existen.
+
 ## Creación del primer administrador
 
 Crear una cuenta administradora desde la consola:
