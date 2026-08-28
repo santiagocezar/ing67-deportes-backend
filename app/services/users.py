@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..extensions import db
-from ..models import DEFAULT_USER_ROLE, User
+from ..models import DEFAULT_USER_ROLE, USER_ROLES, User
 
 
 class UserValidationError(ValueError):
@@ -43,7 +43,14 @@ def _parse_birthdate(value: str, today: date | None = None) -> date:
     return birthdate
 
 
-def create_user(data: Mapping[str, Any]) -> User:
+def create_user(
+    data: Mapping[str, Any],
+    *,
+    role: str = DEFAULT_USER_ROLE,
+) -> User:
+    if role not in USER_ROLES:
+        raise UserValidationError("role is invalid.")
+
     name = _required_string(data, "name")
     birthdate = _parse_birthdate(_required_string(data, "birthdate"))
     email = _required_string(data, "email").lower()
@@ -65,7 +72,7 @@ def create_user(data: Mapping[str, Any]) -> User:
         birthdate=birthdate,
         email=email,
         password_hash=generate_password_hash(password),
-        role=DEFAULT_USER_ROLE,
+        role=role,
     )
     db.session.add(user)
 

@@ -42,32 +42,44 @@ El archivo `app/.env` contiene valores locales y no debe agregarse a Git.
 Para una base nueva y vacía:
 
 ```powershell
-flask --app app init-db
+python -m flask --app app init-db
 ```
 
 Para aplicar las migraciones pendientes sobre una base existente:
 
 ```powershell
-flask --app app upgrade-db
+python -m flask --app app upgrade-db
 ```
 
 Después de modificar un modelo de SQLAlchemy, generar y revisar una migración antes de
 aplicarla:
 
 ```powershell
-flask --app app db migrate -m "descripción del cambio"
-flask --app app upgrade-db
+python -m flask --app app db migrate -m "descripción del cambio"
+python -m flask --app app upgrade-db
 ```
 
 `init-db` rechaza bases que ya contienen tablas de la aplicación. Las migraciones
 autogeneradas siempre deben revisarse antes de ejecutarse.
+
+## Creación del primer administrador
+
+Crear una cuenta administradora desde la consola:
+
+```powershell
+python -m flask --app app create-admin
+```
+
+El comando solicita nombre, fecha de nacimiento, email y contraseña. La contraseña se
+ingresa de forma oculta y requiere confirmación. Después, el administrador obtiene sus
+tokens usando el endpoint normal de login.
 
 ## Ejecución
 
 Iniciar el servidor de desarrollo:
 
 ```powershell
-flask --app app run --debug
+python -m flask --app app run --debug
 ```
 
 La API quedará disponible en:
@@ -80,6 +92,14 @@ El frontend Vue utiliza normalmente:
 
 ```text
 http://localhost:5173
+```
+
+## Pruebas
+
+Ejecutar las pruebas unitarias:
+
+```powershell
+python -m unittest discover -s tests -v
 ```
 
 ## Documentación

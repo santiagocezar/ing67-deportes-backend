@@ -1,11 +1,44 @@
 from datetime import date, datetime
 
-from sqlalchemy import CheckConstraint, func
+from sqlalchemy import CheckConstraint, UniqueConstraint, func
 
 from .extensions import db
 
 
+ADMIN_USER_ROLE = "administrator"
 DEFAULT_USER_ROLE = "referee"
+USER_ROLES = (ADMIN_USER_ROLE, DEFAULT_USER_ROLE)
+
+
+class Sport(db.Model):
+    __tablename__ = "sports"
+    __table_args__ = (
+        CheckConstraint(
+            "max_players BETWEEN 1 AND 20",
+            name="ck_sports_max_players_range",
+        ),
+        CheckConstraint(
+            "char_length(trim(name)) > 0",
+            name="ck_sports_name_not_blank",
+        ),
+        UniqueConstraint("name", name="uq_sports_name"),
+        UniqueConstraint(
+            "normalized_name",
+            name="uq_sports_normalized_name",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    normalized_name = db.Column(db.String(100), nullable=False)
+    max_players = db.Column(db.Integer, nullable=False)
+
+    def to_dict(self) -> dict[str, int | str]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "max_players": self.max_players,
+        }
 
 
 class User(db.Model):

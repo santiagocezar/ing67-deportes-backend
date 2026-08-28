@@ -6,8 +6,6 @@ cambie el comportamiento público del backend.
 
 ## Arquitectura
 
-La aplicación sigue este flujo:
-
 ```text
 Petición HTTP
     ↓
@@ -32,13 +30,12 @@ models.py / PostgreSQL
 Los endpoints pertenecen al backend. El origen del frontend se configura en
 `CORS_ORIGINS`. CORS utiliza orígenes explícitos y no habilita el comodín `*`.
 
-## Modelo de usuarios y sesiones
+## Modelos y relaciones
 
 ### `User`
 
-Representa una cuenta de usuario. Sus datos públicos son `id`, `name`, `birthdate`,
-`role`, `email` y `creation_date`. La contraseña se guarda únicamente como hash y no se
-incluye en las respuestas.
+Representa una cuenta. Sus datos públicos son `id`, `name`, `birthdate`, `role`, `email`
+y `creation_date`. La contraseña se guarda únicamente como hash.
 
 Reglas actuales:
 
@@ -51,18 +48,29 @@ Reglas actuales:
 ### `AuthSession`
 
 Representa una sesión autenticada y conserva el identificador del refresh token vigente,
-su vencimiento y el momento de revocación. El refresh token completo no se guarda en la
-base de datos.
-
-Relación actual:
+su vencimiento y el momento de revocación. El token completo no se guarda.
 
 ```text
 User 1 ─────── N AuthSession
 ```
 
 Un usuario puede iniciar varias sesiones. Cada sesión pertenece a un solo usuario. Al
-eliminar un usuario, sus sesiones se eliminan mediante la relación configurada con
-`ON DELETE CASCADE`.
+eliminar un usuario, sus sesiones se eliminan mediante `ON DELETE CASCADE`.
+
+### `Sport`
+
+Representa un deporte administrable y contiene:
+
+- `id`: identificador.
+- `name`: nombre visible con la primera letra en mayúscula y el resto en minúscula.
+- `normalized_name`: nombre interno sin diferencias de mayúsculas ni acentos.
+- `max_players`: cantidad máxima de jugadores, entre 1 y 20 inclusive.
+
+`normalized_name` tiene una restricción única. Por eso `Fútbol`, `FUTBOL`, `futBol` y
+`fútbol` se consideran el mismo deporte incluso ante solicitudes concurrentes.
+
+`Sport` no tiene relación con `User` ni `AuthSession`. La autenticación solamente
+determina quién puede ejecutar sus operaciones HTTP.
 
 ## Autenticación
 
@@ -74,17 +82,14 @@ eliminar un usuario, sus sesiones se eliminan mediante la relación configurada 
 Authorization: Bearer TOKEN
 ```
 
-Cada rotación invalida el refresh token anterior y entrega un par nuevo. Si se reutiliza
-un refresh token anterior, el servidor interpreta la situación como posible robo,
-revoca la sesión persistida y rechaza todos sus access y refresh tokens.
+Cada rotación invalida el refresh token anterior. Si se reutiliza, el servidor revoca la
+sesión persistida y rechaza todos sus tokens.
 
-## Endpoints
-
-La URL base local es `http://localhost:5000`.
+## API de autenticación
 
 ### `POST /auth/signup`
 
-Registra un usuario.
+Registra un usuario con rol `referee`.
 
 ```json
 {
@@ -95,11 +100,11 @@ Registra un usuario.
 }
 ```
 
-Respuesta exitosa: `201 Created` con los datos públicos del usuario.
+Respuesta exitosa: `201 Created`.
 
 ### `POST /auth/login`
 
-Valida las credenciales, crea una sesión persistente y devuelve los dos tokens.
+Valida credenciales, crea una sesión y devuelve ambos tokens.
 
 ```json
 {
@@ -121,59 +126,118 @@ Respuesta exitosa: `200 OK`.
 
 ### `POST /auth/refresh`
 
-Requiere el refresh token vigente en `Authorization`. Devuelve un access token y un
-refresh token nuevos. El cliente debe reemplazar ambos valores y descartar el refresh
-anterior.
-
-Respuesta exitosa: `200 OK`.
+Recibe el refresh token vigente en `Authorization` y devuelve un par nuevo.
 
 ### `DELETE /auth/logout`
 
-Acepta un access o refresh token y revoca la sesión completa asociada.
-
-Respuesta exitosa: `204 No Content`.
+Acepta un access o refresh token, revoca la sesión y responde `204 No Content`.
 
 ### `GET /auth/me`
 
-Ruta protegida que requiere un access token válido y devuelve los datos públicos del
-usuario autenticado.
+Requiere un access token y devuelve el usuario autenticado.
+
+## API de deportes — HU01
+
+Todos los endpoints requieren un access token con rol `administrator`. Un usuario sin
+token recibe `401 Unauthorized`; un usuario autenticado sin ese rol recibe
+`403 Forbidden`. No existen filtros de búsqueda.
+
+### `POST /sports`
+
+Crea un deporte.
+
+```json
+{
+  "name": "FÚTBOL",
+  "max_players": 11
+}
+```
+
+Respuesta exitosa: `201 Created`.
+
+```json
+{
+  "sport": {
+    "id": 1,
+    "name": "Fútbol",
+    "max_players": 11
+  }
+}
+```
+
+Un nombre equivalente devuelve `409 Conflict`. Un nombre inválido o `max_players`
+fuera de `1..20` devuelve `422 Unprocessable Content`.
+
+### `GET /sports`
+
+Devuelve todos los deportes ordenados por `id`.
+
+```json
+{
+  "sports": [
+    {
+      "id": 1,
+      "name": "Fútbol",
+      "max_players": 11
+    }
+  ]
+}
+```
 
 Respuesta exitosa: `200 OK`.
 
-## Contrato de errores
+### `GET /sports/{id}`
 
-Todas las respuestas de error utilizan esta estructura:
+Devuelve un deporte. Si no existe, responde `404 Not Found`.
+
+### `PUT /sports/{id}`
+
+Modifica únicamente el nombre.
+
+```json
+{
+  "name": "Fútbol sala"
+}
+```
+
+`max_players` es inmutable después de la creación. Intentar modificarlo devuelve
+`422 Unprocessable Content`. Una modificación exitosa responde `200 OK`.
+
+### `DELETE /sports/{id}`
+
+Elimina un deporte y responde `204 No Content`. Si no existe, responde `404 Not Found`.
+
+## Contrato de errores
 
 ```json
 {
   "error": {
     "code": "validation_error",
-    "message": "birthdate must be a valid date in YYYY-MM-DD format."
+    "message": "max_players must be between 1 and 20."
   }
 }
 ```
 
-El frontend debe usar `error.code` para tomar decisiones. `error.message` es un mensaje
-legible y no debe utilizarse como identificador estable.
-
-Los estados siguen la
-[referencia HTTP de MDN](https://developer.mozilla.org/es/docs/Web/HTTP/Reference/Status):
+El frontend debe usar `error.code` para tomar decisiones y `error.message` solamente
+como mensaje legible.
 
 | Estado | Uso en la API |
 | --- | --- |
 | `400 Bad Request` | El cuerpo falta o está mal formado. |
-| `401 Unauthorized` | La autenticación falta, venció, es inválida o la sesión fue revocada. |
-| `403 Forbidden` | El usuario está autenticado, pero no tiene permiso. Reservado para operaciones futuras. |
-| `404 Not Found` | El recurso solicitado no existe. |
-| `409 Conflict` | La solicitud entra en conflicto con el estado actual, por ejemplo un email duplicado. |
-| `422 Unprocessable Content` | El JSON es válido, pero uno de sus datos no cumple las reglas. |
-| `503 Service Unavailable` | La autenticación o la base de datos no está disponible temporalmente. |
+| `401 Unauthorized` | La autenticación falta, venció, es inválida o fue revocada. |
+| `403 Forbidden` | El usuario no tiene el rol necesario. |
+| `404 Not Found` | El recurso no existe. |
+| `409 Conflict` | La solicitud entra en conflicto con el estado actual. |
+| `422 Unprocessable Content` | Un dato no cumple las reglas del negocio. |
+| `503 Service Unavailable` | La base o autenticación no está disponible temporalmente. |
+
+Los estados siguen la
+[referencia HTTP de MDN](https://developer.mozilla.org/es/docs/Web/HTTP/Reference/Status).
 
 ## Persistencia y migraciones
 
-PostgreSQL es la fuente persistente. `db.create_all()` se utiliza únicamente para crear
-una base vacía mediante `init-db`. Los cambios sobre tablas existentes se realizan con
-migraciones versionadas de Flask-Migrate/Alembic.
+PostgreSQL es la fuente persistente. `db.create_all()` se usa únicamente para una base
+vacía mediante `init-db`. Las tablas existentes cambian mediante migraciones versionadas.
 
-La migración inicial registrada agrega `auth_sessions` y convierte `users.birthdate` de
-texto a `DATE`.
+- `78feb1bb58cd`: agrega sesiones rotativas y convierte `birthdate` a `DATE`.
+- `3e22b5f59faa`: agrega `sports` y sus restricciones de unicidad y rango.

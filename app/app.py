@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from flask import Flask
 from flask_migrate import stamp, upgrade
 from sqlalchemy import inspect
+from sqlalchemy.exc import SQLAlchemyError
 
 from .errors import error_response
 from .extensions import cors, db, jwt, migrate
@@ -41,21 +42,33 @@ def create_app() -> Flask:
     db.init_app(flask_app)
     jwt.init_app(flask_app)
     migrate.init_app(flask_app, db)
+    allowed_origins = _cors_origins()
     cors.init_app(
         flask_app,
-        resources={r"/auth/*": {"origins": _cors_origins()}},
+        resources={
+            r"/auth(?:/.*)?": {"origins": allowed_origins},
+            r"/sports(?:/.*)?": {"origins": allowed_origins},
+        },
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "DELETE", "OPTIONS"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         supports_credentials=False,
         max_age=600,
         vary_header=True,
     )
 
     from . import models as _models
+    from .models import ADMIN_USER_ROLE
+    from .routes.sports import sports_bp
     from .routes.users import auth_bp
     from .services.auth import is_token_revoked
+    from .services.users import (
+        DuplicateEmailError,
+        UserValidationError,
+        create_user,
+    )
 
     flask_app.register_blueprint(auth_bp)
+    flask_app.register_blueprint(sports_bp)
 
     @jwt.token_in_blocklist_loader
     def token_in_blocklist(_jwt_header: dict, jwt_payload: dict) -> bool:
@@ -93,5 +106,35 @@ def create_app() -> Flask:
         """Apply pending migrations to an existing database."""
         upgrade()
         click.echo("Database migrations applied successfully.")
+
+    @flask_app.cli.command("create-admin")
+    @click.option("--name", prompt="Name")
+    @click.option("--birthdate", prompt="Birthdate (YYYY-MM-DD)")
+    @click.option("--email", prompt="Email")
+    @click.password_option(confirmation_prompt=True)
+    def create_admin_command(
+        name: str,
+        birthdate: str,
+        email: str,
+        password: str,
+    ) -> None:
+        """Create an administrator without exposing a public admin signup."""
+        try:
+            create_user(
+                {
+                    "name": name,
+                    "birthdate": birthdate,
+                    "email": email,
+                    "password": password,
+                },
+                role=ADMIN_USER_ROLE,
+            )
+        except (UserValidationError, DuplicateEmailError) as error:
+            raise click.ClickException(str(error)) from error
+        except SQLAlchemyError as error:
+            raise click.ClickException(
+                "The administrator could not be created."
+            ) from error
+        click.echo("Administrator created successfully.")
 
     return flask_app
