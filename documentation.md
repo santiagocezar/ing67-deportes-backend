@@ -73,11 +73,17 @@ parsearlas.
 | `DELETE` | `/users/{id}` | Access | Administrador activo | Sin cuerpo |
 | `POST` | `/users/{id}/disable` | Access | Administrador activo | Sin cuerpo |
 | `POST` | `/users/{id}/enable` | Access | Administrador activo | Sin cuerpo |
-| `GET` | `/sports` | Access | Administrador activo | Sin cuerpo |
+| `GET` | `/sports` | Access | Administrador o delegado activo | Sin cuerpo |
 | `POST` | `/sports` | Access | Administrador activo | Configuración completa del deporte |
-| `GET` | `/sports/{id}` | Access | Administrador activo | Sin cuerpo |
+| `GET` | `/sports/{id}` | Access | Administrador o delegado activo | Sin cuerpo |
 | `PUT` | `/sports/{id}` | Access | Administrador activo | Únicamente `name` |
 | `DELETE` | `/sports/{id}` | Access | Administrador activo | Sin cuerpo |
+| `POST` | `/teams` | Access | Administrador o delegado activo | Datos básicos del equipo |
+| `GET` | `/teams` | Access | Administrador o delegado activo | Filtros y paginación opcionales |
+| `GET` | `/teams/{id}` | Access | Administrador o delegado activo | Sin cuerpo |
+| `PUT` | `/teams/{id}` | Access | Administrador o delegado activo | Únicamente `name` |
+| `PATCH` | `/teams/{id}/disable` | Access | Administrador o delegado activo | Sin cuerpo |
+| `PATCH` | `/teams/{id}/enable` | Access | Administrador o delegado activo | Sin cuerpo |
 
 ### Matriz de permisos actual
 
@@ -86,11 +92,13 @@ parsearlas.
 | Autenticación propia | Sí | Sí | Sí | Sí |
 | Ver estado en `/auth/me` | Sí | Sí | Sí | Sí |
 | Revisar y administrar cuentas | No | No | No | Sí, si está activo |
-| CRUD de deportes | No | No | No | Sí, si está activo |
+| Leer deportes | No | No | Sí, si está activo | Sí, si está activo |
+| Crear, modificar o eliminar deportes | No | No | No | Sí, si está activo |
+| Gestionar equipos, sin borrado permanente | No | No | Sí, si está activo | Sí, si está activo |
 
 `user` significa cuenta pendiente. `is_active = false` bloquea todos los recursos de
 negocio aunque el rol sea correcto. En esta versión no existen endpoints de negocio para
-árbitros ni delegados federativos.
+árbitros; los delegados federativos gestionan equipos y consultan deportes.
 
 ### Tipos de respuesta recomendados para TypeScript
 
@@ -125,6 +133,41 @@ interface Sport {
   max_players: number;
   match_duration: number;
   resolution_methods: ResolutionMethod[];
+}
+
+type GenderCategory = "male" | "female";
+
+interface TeamSportSummary {
+  id: number;
+  name: string;
+  max_players: number;
+}
+
+interface TeamSummary {
+  id: number;
+  name: string;
+  sport_id: number;
+  sport: TeamSportSummary;
+  gender_category: GenderCategory;
+  is_enabled: boolean;
+  created_at: string;
+  disabled_at: string | null;
+  current_players_quantity: 0;
+  is_eligible_for_competition: false;
+}
+
+interface TeamDetail extends TeamSummary {
+  players: [];
+}
+
+interface TeamPage {
+  teams: TeamSummary[];
+  pagination: {
+    page: number;
+    page_size: 25;
+    total_items: number;
+    total_pages: number;
+  };
 }
 
 interface ApiError {
@@ -189,6 +232,33 @@ mayúsculas y espacios.
 
 `Sport` no tiene relación con `User` ni `AuthSession`. La autorización determina quién
 puede ejecutar sus operaciones HTTP.
+
+### `Team`
+
+Representa la identidad estable de un equipo y persiste únicamente:
+
+- `id`, `name` y `normalized_name`;
+- `sport_id`, con relación obligatoria hacia `Sport`;
+- `gender_category`, exactamente `male` o `female`;
+- `is_enabled`, `created_at` y `disabled_at`.
+
+```text
+Sport 1 ─────── N Team
+```
+
+El nombre se limpia colapsando espacios y se normaliza ignorando mayúsculas y acentos.
+La combinación `normalized_name + sport_id + gender_category` es única incluso para
+equipos deshabilitados. Por eso nombres equivalentes entran en conflicto dentro del
+mismo deporte y género, pero pueden repetirse si cambia alguno de esos dos valores.
+
+`sport_id` y `gender_category` son inmutables. El estado solo cambia mediante los
+endpoints de habilitación; `disabled_at` debe ser nulo mientras el equipo esté habilitado
+y obligatorio cuando esté deshabilitado. No existe borrado permanente de equipos.
+
+`current_players_quantity`, `is_eligible_for_competition` y `players` no se persisten.
+Mientras todavía no existan `Player` y `Plantel`, sus valores contractuales son `0`,
+`false` y `[]`. La elegibilidad futura se derivará del equipo habilitado y del número
+exacto de membresías activas respecto de `Sport.max_players`.
 
 ## Autenticación
 
@@ -303,13 +373,40 @@ operación recibe `409 user_not_pending` y la tabla debe recargarse.
 
 ### Gestión de deportes
 
-1. Consultar `GET /sports` al abrir la pantalla administrativa.
+1. Administradores y delegados pueden consultar `GET /sports`; solo el administrador
+   puede crear, editar o eliminar.
 2. Crear enviando juntos `name`, `max_players`, `match_duration` y
    `resolution_methods`.
 3. Conservar el orden de `resolution_methods` para mostrarlo como fue configurado.
 4. Al editar, enviar únicamente `name`; los otros campos son inmutables.
 5. Tras crear, editar o eliminar, actualizar el estado local o volver a consultar la
    lista.
+
+### Gestión de equipos
+
+```text
+GET /sports
+        ↓
+seleccionar deporte y género
+        ↓
+POST /teams
+        ↓
+GET /teams con búsqueda, filtros, orden y página
+```
+
+1. Usar `GET /sports` para poblar la selección de deporte.
+2. Ofrecer únicamente `male` y `female` como `gender_category`.
+3. Crear enviando solamente `name`, `sport_id` y `gender_category`; no mostrar todavía
+   selección de jugadores.
+4. Enviar búsqueda, filtros, orden y página al backend. No descargar todas las páginas
+   ni filtrar solamente los 25 elementos visibles.
+5. La vista inicia con equipos habilitados, ordenados por nombre ascendente.
+6. Mostrar `Enabled`, `Disabled` y `All` como opciones de estado.
+7. Un equipo deshabilitado conserva identidad e historial: mostrar la acción de
+   rehabilitar y ocultar edición y deshabilitación.
+8. No mostrar borrado permanente.
+9. Tratar `players: []` como plantel vacío y mantener el estado administrativo separado
+   de `is_eligible_for_competition`.
 
 ### Cierre de sesión
 
@@ -528,9 +625,11 @@ el rol actual.
 
 ## API de deportes — HU01
 
-Todos los endpoints requieren un access token y que el usuario actual en PostgreSQL sea
-un `administrator` activo. Un usuario sin token recibe `401 Unauthorized`; uno pendiente,
-deshabilitado o con otro rol recibe `403 Forbidden`. No existen filtros de búsqueda.
+Todos los endpoints requieren un access token. `GET /sports` y `GET /sports/{id}`
+permiten un `administrator` o `federation_delegate` activo; las operaciones de escritura
+continúan reservadas al administrador. Un usuario sin token recibe `401 Unauthorized`;
+uno pendiente, deshabilitado o con otro rol recibe `403 Forbidden`. No existen filtros
+de búsqueda.
 
 ### `POST /sports`
 
@@ -577,7 +676,7 @@ devuelve `422 Unprocessable Content`.
 
 Devuelve todos los deportes ordenados por `id`.
 
-- Autorización: Bearer con access token de administrador activo.
+- Autorización: Bearer con access token de administrador o delegado activo.
 - Parámetros, filtros y cuerpo: ninguno.
 
 ```json
@@ -603,7 +702,7 @@ Respuesta exitosa: `200 OK`.
 
 Devuelve un deporte. Si no existe, responde `404 Not Found`.
 
-- Autorización: Bearer con access token de administrador activo.
+- Autorización: Bearer con access token de administrador o delegado activo.
 - Parámetro de ruta: `id`, entero del deporte.
 - Cuerpo: ninguno.
 - Respuesta exitosa: `200 OK` con `{ "sport": Sport }`.
@@ -629,6 +728,8 @@ modificación válida del nombre responde `200 OK`.
 ### `DELETE /sports/{id}`
 
 Elimina un deporte y responde `204 No Content`. Si no existe, responde `404 Not Found`.
+Si cualquier equipo habilitado o deshabilitado lo referencia, responde
+`409 sport_in_use`; la relación debe preservarse y nunca se borra en cascada.
 
 - Autorización: Bearer con access token de administrador activo.
 - Parámetro de ruta: `id`, entero del deporte.
@@ -639,7 +740,127 @@ Elimina un deporte y responde `204 No Content`. Si no existe, responde `404 Not 
 No se implementaron partidos ni competiciones en este cambio. El contrato acordado para
 una futura entidad `Match` es que `resolution_method` será un string nullable y, cuando
 haya empate, deberá contener un `code` incluido en
-`Match.competition.sport.resolution_methods`. No habrá una tabla adicional de métodos.
+`Match.competition.sport.resolution_methods`.
+
+No habrá una tabla adicional de métodos.
+
+## API de equipos
+
+Todos los endpoints requieren un access token y que el usuario actual en PostgreSQL sea
+un `administrator` o `federation_delegate` activo. Cuentas pendientes, deshabilitadas,
+árbitros y solicitudes sin autenticación no tienen acceso.
+
+### `POST /teams`
+
+Crea un equipo vacío, habilitado pero todavía no elegible.
+
+```json
+{
+  "name": "Boca Juniors",
+  "sport_id": 1,
+  "gender_category": "male"
+}
+```
+
+Solo se aceptan esos tres campos. IDs de jugadores, estado, timestamps, cantidades y
+elegibilidad devuelven `422 validation_error`. Un deporte inexistente devuelve
+`404 sport_not_found`; un nombre equivalente en el mismo deporte y género devuelve
+`409 team_name_conflict`.
+
+Respuesta exitosa: `201 Created`.
+
+```json
+{
+  "team": {
+    "id": 1,
+    "name": "Boca Juniors",
+    "sport_id": 1,
+    "sport": {"id": 1, "name": "Fútbol", "max_players": 11},
+    "gender_category": "male",
+    "is_enabled": true,
+    "created_at": "2026-08-31T15:00:00+00:00",
+    "disabled_at": null,
+    "current_players_quantity": 0,
+    "is_eligible_for_competition": false,
+    "players": []
+  }
+}
+```
+
+### `GET /teams`
+
+Busca, filtra, ordena y pagina en PostgreSQL. Los filtros se combinan con `AND`.
+
+| Parámetro | Valores | Predeterminado |
+| --- | --- | --- |
+| `page` | Entero positivo | `1` |
+| `search` | Parte del nombre, sin distinguir mayúsculas o acentos | Sin búsqueda |
+| `sport_id` | Entero positivo | Todos |
+| `gender_category` | `male`, `female` | Ambos |
+| `status` | `enabled`, `disabled`, `all` | `enabled` |
+| `sort` | `name`, `created_at` | `name` |
+| `order` | `asc`, `desc` | `asc` |
+
+El tamaño es fijo en 25; no existe `per_page`. Los filtros y el orden se aplican antes
+de paginar, con `id` como desempate determinista. Una página vacía o fuera de rango
+responde `200`, mientras un parámetro desconocido o inválido devuelve `422`.
+
+```json
+{
+  "teams": [],
+  "pagination": {
+    "page": 1,
+    "page_size": 25,
+    "total_items": 0,
+    "total_pages": 0
+  }
+}
+```
+
+Cada elemento incluye el resumen compacto de `Sport`, pero no `resolution_methods`, y
+omite `players`. El backend precarga deportes para evitar una consulta adicional por
+cada tarjeta.
+
+### `GET /teams/{id}`
+
+Devuelve `200` con `{ "team": TeamDetail }`, incluyendo `players: []`. Un equipo
+deshabilitado sigue siendo consultable. Si no existe, devuelve `404 team_not_found`.
+
+### `PUT /teams/{id}`
+
+Modifica únicamente el nombre de un equipo habilitado:
+
+```json
+{
+  "name": "Boca Juniors A"
+}
+```
+
+El nombre vuelve a normalizarse y se controla dentro del mismo deporte y género.
+Intentar enviar `sport_id`, `gender_category`, estado, timestamps u otros campos devuelve
+`422`. Un equipo deshabilitado devuelve `409 team_disabled`.
+
+Regla futura documentada: cuando exista `Participation`, un equipo con historial de
+competición no podrá renombrarse.
+
+### `PATCH /teams/{id}/disable`
+
+Cambia atómicamente `is_enabled` a `false` y registra `disabled_at`. Repetirlo devuelve
+`409 team_already_disabled`.
+
+Reglas futuras documentadas: no se podrá deshabilitar durante una competición en curso
+y, cuando exista `Plantel`, se cerrarán las membresías activas sin borrar jugadores ni
+historial.
+
+### `PATCH /teams/{id}/enable`
+
+Cambia atómicamente `is_enabled` a `true` y limpia `disabled_at`. Repetirlo devuelve
+`409 team_already_enabled`.
+
+### Ausencia de borrado y filtros de elegibilidad
+
+No existe `DELETE /teams/{id}`. Los equipos se deshabilitan y conservan su identidad.
+Tampoco existe un filtro de elegibilidad hasta implementar `Player` y `Plantel`.
 
 ## Contrato de errores
 
@@ -683,6 +904,13 @@ como mensaje legible.
 | `sport_not_found` | `404` | Quitar o recargar el recurso solicitado. |
 | `email_conflict` | `409` | Informar que el email ya está registrado. |
 | `sport_name_conflict` | `409` | Informar que ya existe un nombre equivalente. |
+| `sport_in_use` | `409` | Informar que existen equipos que todavía referencian el deporte. |
+| `team_not_found` | `404` | Recargar o retirar el equipo solicitado. |
+| `team_name_conflict` | `409` | Informar que el nombre ya existe para ese deporte y género. |
+| `team_disabled` | `409` | Ocultar edición y ofrecer rehabilitar el equipo. |
+| `team_already_enabled` | `409` | Recargar el estado; el equipo ya estaba habilitado. |
+| `team_already_disabled` | `409` | Recargar el estado; el equipo ya estaba deshabilitado. |
+| `internal_error` | `500` | Mostrar un error seguro e informar que se puede reintentar. |
 | `user_not_pending` | `409` | Recargar la lista de solicitudes. |
 | `active_user_delete_forbidden` | `409` | Ofrecer deshabilitar al árbitro. |
 | `account_state_conflict` | `409` | Recargar el estado de la cuenta. |
@@ -701,8 +929,9 @@ Los estados siguen la
 
 ## Funcionalidades todavía no implementadas
 
-Esta versión no expone endpoints de competiciones, equipos, jugadores, planteles,
-partidos, sanciones ni reconocimiento facial. Tampoco existe una ruta pública para crear
+Esta versión no expone endpoints de competiciones, jugadores, planteles, partidos,
+sanciones ni reconocimiento facial. Los equipos existen sin jugadores ni elegibilidad
+real hasta implementar `Player` y `Plantel`. Tampoco existe una ruta pública para crear
 administradores o modificar libremente roles. El primer administrador se crea mediante
 el comando CLI documentado en el README.
 
@@ -715,3 +944,5 @@ vacía mediante `init-db`. Las tablas existentes cambian mediante migraciones ve
 - `3e22b5f59faa`: agrega `sports` y sus restricciones de unicidad y rango.
 - `a6c8f4d2190e`: agrega aprobación de cuentas, estado activo, roles vigentes, duración
   de partidos y métodos JSONB de resolución.
+- `d4f2a7c91b30`: agrega equipos, relación restrictiva con deportes, unicidad por deporte
+  y género, y consistencia entre estado y fecha de deshabilitación.

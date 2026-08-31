@@ -15,7 +15,8 @@ Main users:
 
 - **Administrator**: manages sports, competitions, teams, players, rosters, player photos,
   historical imports, configuration, and account approval.
-- **Federation delegate**: approved operational account for future federation workflows.
+- **Federation delegate**: manages Teams and reads Sport configuration; additional
+  federation workflows remain future scope.
 - **Referee**: manages assigned matches, performs pre-match group scans, reviews player
   eligibility, manually resolves recognition failures, and records/consults sanctions.
 - **User**: pending public account with no access to business resources until approval.
@@ -126,11 +127,73 @@ and immutable after creation. Match duration is a positive whole number of minut
 Resolution methods are stored as an ordered, non-empty PostgreSQL JSONB array of unique
 `{code, name}` objects; codes use English `snake_case` identifiers.
 
+### Team management
+
+A Team persists only its name, normalized name, Sport, gender category, administrative
+state, creation timestamp, and optional disablement timestamp.
+
+Team names are unique after case folding and accent removal within the same Sport and
+gender category. Disabled Teams continue reserving their names. Sport and gender are
+immutable after creation, and a disabled Team cannot be renamed.
+
+Teams are never permanently deleted through the API. Use explicit disable and re-enable
+operations. A Sport referenced by any enabled or disabled Team cannot be deleted.
+
+Active administrators and federation delegates may list, view, create, rename, disable,
+and re-enable Teams. Federation delegates may read Sports but cannot mutate them.
+
+Keep administrative state and competition eligibility separate:
+
+```text
+is_eligible_for_competition =
+    Team.is_enabled
+    AND active Plantel count == Team.sport.max_players
+```
+
+Never persist eligibility or a mutable player-count cache. Until Player and Plantel are
+implemented, Team responses expose zero current players, false eligibility, and an empty
+player list.
+
 ### Player-team membership
 
 Use `Plantel`, not `Player.team`.
 
-Do not overwrite historical membership.
+Approved future rules:
+
+- A Player may belong to at most one enabled Team globally at a time.
+- Player availability is derived from the absence of active membership; never persist a
+  drifting `selection_status`.
+- Never delete or overwrite membership history.
+- Active membership count cannot exceed `Team.sport.max_players`.
+- Removing or replacing a member makes the Team ineligible until the exact required
+  count is restored.
+- A member may be removed or replaced only while the Team is not in an in-progress
+  Competition.
+- Disabling a Team will close active memberships without disabling Players.
+- Team is the stable identity; Plantel records historical membership and never replaces
+  Team.
+
+Implementation handoff for `Player` and `Plantel`:
+
+- `Player` and `Plantel` are not implemented yet. Before implementing them, use the
+  current approved requirements and versioned schema for their exact fields, keys,
+  timestamps, and API contract. Do not infer missing domain data.
+- Do not add `team_id` to `Player`, and do not persist derived values such as player
+  availability, active player count, or Team competition eligibility.
+- Treat an active `Plantel` row as the source of truth for current membership. Derive
+  availability, counts, and eligibility on the server from PostgreSQL; never accept
+  these values from the client.
+- Membership writes must be transactional. Enforce both Team capacity and at most one
+  active Team membership per Player in backend logic and, where the approved schema
+  permits it, with database constraints that remain safe under concurrent requests.
+- Keep every closed membership as history. Do not physically delete or overwrite an
+  old membership when a Player changes Team.
+- Do not invent how a membership becomes active or closed. If the approved schema does
+  not define it, ask before choosing fields such as `is_active`, `status`, `joined_at`,
+  or `left_at`.
+- Competition-dependent removal and replacement rules remain deferred until
+  `Competition` and `Participation` exist. Do not create speculative entities only to
+  implement `Player` or `Plantel`.
 
 ### Competition membership
 
@@ -141,6 +204,10 @@ Do not infer participation only because a team appears in a match.
 ### Duplicate player rule
 
 A player must not be assigned to more than one team within the same competition.
+
+The approved global active-membership rule is stricter: while a Plantel membership is
+active, the Player cannot simultaneously belong to any other enabled Team. Enforcing
+that global rule must also preserve this competition-level invariant.
 
 This is a critical invariant.
 
@@ -443,6 +510,49 @@ Do not claim tests passed unless they were actually run.
 
 ---
 
+## Documentation and API client synchronization
+
+Documentation is part of every feature. Update the existing documents in the same
+change that modifies behavior; do not leave obsolete or duplicated instructions.
+
+Use `documentation.md` for the functional API contract and business-facing technical
+documentation. When a feature adds or changes behavior, document in Spanish:
+
+- the complete user and authorization flow;
+- endpoints, HTTP methods, authentication and required roles;
+- path/query parameters and request bodies;
+- successful responses and relevant error responses;
+- validations, state transitions, relationships, and business invariants.
+
+Keep machine-readable names in English even when the explanation is in Spanish.
+
+Use `readme.md` only for operational and repository instructions, including:
+
+- prerequisites and local installation;
+- environment configuration with placeholders only;
+- application startup;
+- database creation, migrations, and seed/initialization procedures;
+- test commands;
+- instructions for importing or running development tools.
+
+Do not turn `readme.md` into a duplicate API reference. Link to `documentation.md` for
+endpoint and flow details.
+
+When an endpoint, method, path, authorization rule, parameter, request body, or
+test workflow changes, update the importable files under `hoppscotch/`:
+
+- keep the collection aligned with every available endpoint;
+- keep environment variables aligned with the collection;
+- use environment variables for base URLs, credentials, tokens, and reusable IDs;
+- include useful request descriptions and scripts when a response feeds a later request;
+- keep credentials, tokens, and other secret values empty;
+- validate the JSON files and ensure they remain importable by Hoppscotch.
+
+Purely internal changes with no API or manual-test impact do not require artificial
+Hoppscotch edits.
+
+---
+
 ## Definition of Done
 
 A task is done when:
@@ -454,7 +564,9 @@ A task is done when:
 - no critical known defect remains;
 - no secret/sensitive data was committed;
 - API behavior is coherent;
-- documentation is updated when setup or behavior changed;
+- `documentation.md` reflects changed API behavior, flows, and business rules;
+- `readme.md` reflects changed setup, migration, initialization, or tooling steps;
+- Hoppscotch importables are synchronized when the API or manual-test flow changed;
 - changes are reviewable and scoped.
 
 Never silence a failing check just to mark work as done.

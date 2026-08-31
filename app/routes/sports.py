@@ -3,10 +3,11 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from ..authorization import roles_required
 from ..errors import error_response
-from ..models import ADMIN_USER_ROLE
+from ..models import ADMIN_USER_ROLE, FEDERATION_DELEGATE_USER_ROLE
 from ..services.sports import (
     DuplicateSportNameError,
     SportNotFoundError,
+    SportInUseError,
     SportValidationError,
     create_sport,
     delete_sport,
@@ -33,7 +34,7 @@ def _database_unavailable(operation: str):
 
 
 @sports_bp.get("")
-@roles_required(ADMIN_USER_ROLE)
+@roles_required(ADMIN_USER_ROLE, FEDERATION_DELEGATE_USER_ROLE)
 def get_sports():
     try:
         sports = list_sports()
@@ -66,7 +67,7 @@ def post_sport():
 
 
 @sports_bp.get("/<int:sport_id>")
-@roles_required(ADMIN_USER_ROLE)
+@roles_required(ADMIN_USER_ROLE, FEDERATION_DELEGATE_USER_ROLE)
 def get_sport_by_id(sport_id: int):
     try:
         sport = get_sport(sport_id)
@@ -128,6 +129,8 @@ def remove_sport(sport_id: int):
         delete_sport(sport_id)
     except SportNotFoundError as error:
         return error_response("sport_not_found", str(error), 404)
+    except SportInUseError as error:
+        return error_response("sport_in_use", str(error), 409)
     except SQLAlchemyError:
         return _database_unavailable("delete")
     return "", 204

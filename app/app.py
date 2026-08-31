@@ -55,10 +55,11 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
         resources={
             r"/auth(?:/.*)?": {"origins": allowed_origins},
             r"/sports(?:/.*)?": {"origins": allowed_origins},
+            r"/teams(?:/.*)?": {"origins": allowed_origins},
             r"/users(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         supports_credentials=False,
         max_age=600,
         vary_header=True,
@@ -68,6 +69,7 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
     from .models import ADMIN_USER_ROLE
     from .routes.admin_users import users_bp
     from .routes.sports import sports_bp
+    from .routes.teams import teams_bp
     from .routes.users import auth_bp
     from .services.auth import is_token_revoked
     from .services.users import (
@@ -78,6 +80,7 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
 
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(sports_bp)
+    flask_app.register_blueprint(teams_bp)
     flask_app.register_blueprint(users_bp)
 
     @jwt.token_in_blocklist_loader

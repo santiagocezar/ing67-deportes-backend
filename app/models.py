@@ -60,6 +60,11 @@ class Sport(db.Model):
         JSON().with_variant(JSONB, "postgresql"),
         nullable=False,
     )
+    teams = db.relationship(
+        "Team",
+        back_populates="sport",
+        passive_deletes=True,
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -69,6 +74,84 @@ class Sport(db.Model):
             "match_duration": self.match_duration,
             "resolution_methods": self.resolution_methods,
         }
+
+
+class Team(db.Model):
+    __tablename__ = "teams"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(trim(name)) > 0",
+            name="ck_teams_name_not_blank",
+        ),
+        CheckConstraint(
+            "gender_category IN ('male', 'female')",
+            name="ck_teams_valid_gender_category",
+        ),
+        CheckConstraint(
+            "(is_enabled AND disabled_at IS NULL) OR "
+            "(NOT is_enabled AND disabled_at IS NOT NULL)",
+            name="ck_teams_enabled_timestamp_consistency",
+        ),
+        UniqueConstraint(
+            "normalized_name",
+            "sport_id",
+            "gender_category",
+            name="uq_teams_normalized_name_sport_gender",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    normalized_name = db.Column(db.String(100), nullable=False)
+    sport_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "sports.id",
+            name="fk_teams_sport_id_sports",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    gender_category = db.Column(db.String(10), nullable=False)
+    is_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default=true(),
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    disabled_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    sport = db.relationship("Sport", back_populates="teams")
+
+    def to_summary_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "sport_id": self.sport_id,
+            "sport": {
+                "id": self.sport.id,
+                "name": self.sport.name,
+                "max_players": self.sport.max_players,
+            },
+            "gender_category": self.gender_category,
+            "is_enabled": self.is_enabled,
+            "created_at": (
+                self.created_at.isoformat() if self.created_at else None
+            ),
+            "disabled_at": (
+                self.disabled_at.isoformat() if self.disabled_at else None
+            ),
+            "current_players_quantity": 0,
+            "is_eligible_for_competition": False,
+        }
+
+    def to_detail_dict(self) -> dict[str, Any]:
+        return {**self.to_summary_dict(), "players": []}
 
 
 class User(db.Model):
