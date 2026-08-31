@@ -78,8 +78,17 @@ Por ejemplo, si PostgreSQL utiliza el usuario `postgres`, el puerto `5433` y la 
 psql -U postgres -p 5433 -d sportsapp_db -f scripts/initialize_sports.sql
 ```
 
-El script precarga Fútbol con 11 jugadores y Básquet con 5. Puede ejecutarse más de una
-vez porque ignora los nombres normalizados que ya existen.
+El script configura:
+
+- Fútbol: 11 jugadores, 90 minutos, penales y tiempo extra.
+- Básquet: 5 jugadores, 40 minutos y tiempo extra.
+
+Puede ejecutarse más de una vez. Si los deportes ya existen, actualiza únicamente su
+duración y sus métodos de resolución con los valores iniciales aprobados.
+
+La migración no inventa configuraciones para otros deportes existentes. Si
+`upgrade-db` informa que alguno no tiene valores aprobados, se deben acordar esos datos
+y extender la migración antes de volver a ejecutarla.
 
 ## Creación del primer administrador
 
@@ -112,6 +121,31 @@ El frontend Vue utiliza normalmente:
 ```text
 http://localhost:5173
 ```
+
+## Pruebas manuales con Hoppscotch
+
+El directorio `hoppscotch/` contiene una colección con todos los endpoints y un
+entorno local sin credenciales ni tokens reales:
+
+- `sports-app-collection.json`
+- `sports-app-local-environment.json`
+
+Para importarlos, abrir Hoppscotch y seguir estos pasos:
+
+1. En **Collections**, seleccionar **Import > Import from Hoppscotch** e importar
+   `hoppscotch/sports-app-collection.json`.
+2. En **Environments**, seleccionar **Import > Hoppscotch Environment** e importar
+   `hoppscotch/sports-app-local-environment.json`.
+3. Activar el entorno `Sports App - Local` y completar `admin_email`,
+   `admin_password`, `account_email` y `account_password`.
+4. Iniciar el backend en `http://localhost:5000`.
+5. Para probar el alta completa, ejecutar: signup, login de administrador,
+   aprobación de la cuenta y, por último, login de la cuenta aprobada.
+
+Los scripts de login, refresh, signup y creación de deportes guardan
+automáticamente los tokens e identificadores devueltos por la API. Las variables
+secretas se importan vacías intencionalmente: no se deben exportar ni subir al
+repositorio entornos que contengan credenciales o tokens reales.
 
 ## Pruebas
 

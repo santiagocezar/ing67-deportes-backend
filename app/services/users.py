@@ -5,15 +5,39 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..extensions import db
-from ..models import DEFAULT_USER_ROLE, USER_ROLES, User
+from ..models import (
+    DEFAULT_PUBLIC_ROLE,
+    REQUESTABLE_ROLES,
+    USER_ROLES,
+    User,
+)
+
+
+_BASE_USER_FIELDS = {"name", "birthdate", "email", "password"}
 
 
 class UserValidationError(ValueError):
     """Raised when user input does not satisfy validation rules."""
 
 
+class InvalidRequestedRoleError(UserValidationError):
+    """Raised when public signup requests an unsupported role."""
+
+
 class DuplicateEmailError(ValueError):
     """Raised when an email address is already registered."""
+
+
+def _reject_unexpected_fields(
+    data: Mapping[str, Any],
+    allowed_fields: set[str],
+) -> None:
+    unexpected_fields = sorted(
+        str(field) for field in set(data) - allowed_fields
+    )
+    if unexpected_fields:
+        fields = ", ".join(unexpected_fields)
+        raise UserValidationError(f"Unexpected fields: {fields}.")
 
 
 def _required_string(data: Mapping[str, Any], field: str) -> str:
@@ -46,10 +70,22 @@ def _parse_birthdate(value: str, today: date | None = None) -> date:
 def create_user(
     data: Mapping[str, Any],
     *,
-    role: str = DEFAULT_USER_ROLE,
+    role: str = DEFAULT_PUBLIC_ROLE,
 ) -> User:
     if role not in USER_ROLES:
         raise UserValidationError("role is invalid.")
+
+    is_public_signup = role == DEFAULT_PUBLIC_ROLE
+    allowed_fields = set(_BASE_USER_FIELDS)
+    if is_public_signup:
+        allowed_fields.add("requested_role")
+    _reject_unexpected_fields(data, allowed_fields)
+
+    requested_role = data.get("requested_role") if is_public_signup else None
+    if is_public_signup and requested_role not in REQUESTABLE_ROLES:
+        raise InvalidRequestedRoleError(
+            "requested_role must be referee or federation_delegate."
+        )
 
     name = _required_string(data, "name")
     birthdate = _parse_birthdate(_required_string(data, "birthdate"))
@@ -73,6 +109,7 @@ def create_user(
         email=email,
         password_hash=generate_password_hash(password),
         role=role,
+        requested_role=requested_role,
     )
     db.session.add(user)
 

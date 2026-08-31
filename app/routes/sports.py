@@ -1,9 +1,7 @@
-from functools import wraps
-
 from flask import Blueprint, current_app, jsonify, request
-from flask_jwt_extended import get_jwt, jwt_required
 from sqlalchemy.exc import SQLAlchemyError
 
+from ..authorization import roles_required
 from ..errors import error_response
 from ..models import ADMIN_USER_ROLE
 from ..services.sports import (
@@ -20,23 +18,6 @@ from ..services.sports import (
 
 sports_bp = Blueprint("sports", __name__, url_prefix="/sports")
 
-def administrator_required(function):
-    """Require a valid access token whose role is administrator."""
-
-    @wraps(function)
-    @jwt_required()
-    def wrapper(*args, **kwargs):
-        if get_jwt().get("role") != ADMIN_USER_ROLE:
-            return error_response(
-                "administrator_required",
-                "Administrator permissions are required.",
-                403,
-            )
-        return function(*args, **kwargs)
-
-    return wrapper
-
-
 def _json_body() -> dict | None:
     data = request.get_json(silent=True)
     return data if isinstance(data, dict) else None
@@ -52,7 +33,7 @@ def _database_unavailable(operation: str):
 
 
 @sports_bp.get("")
-@administrator_required
+@roles_required(ADMIN_USER_ROLE)
 def get_sports():
     try:
         sports = list_sports()
@@ -62,7 +43,7 @@ def get_sports():
 
 
 @sports_bp.post("")
-@administrator_required
+@roles_required(ADMIN_USER_ROLE)
 def post_sport():
     data = _json_body()
     if data is None:
@@ -85,7 +66,7 @@ def post_sport():
 
 
 @sports_bp.get("/<int:sport_id>")
-@administrator_required
+@roles_required(ADMIN_USER_ROLE)
 def get_sport_by_id(sport_id: int):
     try:
         sport = get_sport(sport_id)
@@ -97,7 +78,7 @@ def get_sport_by_id(sport_id: int):
 
 
 @sports_bp.put("/<int:sport_id>")
-@administrator_required
+@roles_required(ADMIN_USER_ROLE)
 def put_sport(sport_id: int):
     data = _json_body()
     if data is None:
@@ -106,10 +87,17 @@ def put_sport(sport_id: int):
             "A JSON request body is required.",
             400,
         )
-    if "max_players" in data:
+    immutable_fields = {
+        "max_players",
+        "match_duration",
+        "resolution_methods",
+    }
+    supplied_immutable_fields = sorted(immutable_fields.intersection(data))
+    if supplied_immutable_fields:
         return error_response(
             "immutable_field",
-            "max_players cannot be modified after sport creation.",
+            f"{', '.join(supplied_immutable_fields)} cannot be modified "
+            "after sport creation.",
             422,
         )
     if set(data) - {"name"}:
@@ -134,7 +122,7 @@ def put_sport(sport_id: int):
 
 
 @sports_bp.delete("/<int:sport_id>")
-@administrator_required
+@roles_required(ADMIN_USER_ROLE)
 def remove_sport(sport_id: int):
     try:
         delete_sport(sport_id)
