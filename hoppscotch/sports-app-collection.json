@@ -438,9 +438,8 @@
             "params": [],
             "headers": [],
             "auth": {
-              "authType": "bearer",
-              "authActive": true,
-              "token": "<<account_access_token>>"
+              "authType": "inherit",
+              "authActive": true
             },
             "body": {
               "contentType": null,
@@ -450,7 +449,7 @@
             "testScript": "pw.test(\"Sport list returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
             "requestVariables": [],
             "responses": {},
-            "description": "Lists all sports for an active administrator or federation delegate. This endpoint does not accept search filters."
+            "description": "Lists all sports. This endpoint does not accept search filters."
           },
           {
             "v": "17",
@@ -460,9 +459,8 @@
             "params": [],
             "headers": [],
             "auth": {
-              "authType": "bearer",
-              "authActive": true,
-              "token": "<<account_access_token>>"
+              "authType": "inherit",
+              "authActive": true
             },
             "body": {
               "contentType": null,
@@ -472,7 +470,7 @@
             "testScript": "pw.test(\"Sport detail returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
             "requestVariables": [],
             "responses": {},
-            "description": "Returns the sport identified by sport_id for an active administrator or federation delegate."
+            "description": "Returns the sport identified by sport_id."
           },
           {
             "v": "17",
@@ -531,207 +529,7 @@
         },
         "headers": [],
         "variables": [],
-        "description": "Sport reads for active administrators or federation delegates; mutations remain administrator-only.",
-        "preRequestScript": "",
-        "testScript": ""
-      },
-      {
-        "v": 12,
-        "name": "04 - Teams",
-        "folders": [],
-        "requests": [
-          {
-            "v": "17",
-            "name": "01 - Create Team",
-            "method": "POST",
-            "endpoint": "<<base_url>>/teams",
-            "params": [],
-            "headers": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "active": true,
-                "description": "JSON request body."
-              }
-            ],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": "application/json",
-              "body": "{\n  \"name\": \"Boca Juniors\",\n  \"sport_id\": <<sport_id>>,\n  \"gender_category\": \"male\"\n}"
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team creation returns 201\", () => {\n  pw.expect(pw.response.status).toBe(201);\n});\n\nif (pw.response.status === 201) {\n  pw.env.set(\"team_id\", String(pw.response.body.team.id));\n}",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Creates an enabled empty Team and saves its id. Use an approved federation-delegate account token or copy an administrator access token into account_access_token."
-          },
-          {
-            "v": "17",
-            "name": "02 - List Teams",
-            "method": "GET",
-            "endpoint": "<<base_url>>/teams",
-            "params": [
-              {
-                "key": "page",
-                "value": "1",
-                "active": true,
-                "description": "Positive page number; page size is always 25."
-              },
-              {
-                "key": "search",
-                "value": "boca",
-                "active": false,
-                "description": "Case- and accent-insensitive partial name."
-              },
-              {
-                "key": "sport_id",
-                "value": "<<sport_id>>",
-                "active": false,
-                "description": "Positive Sport id."
-              },
-              {
-                "key": "gender_category",
-                "value": "male",
-                "active": false,
-                "description": "male or female."
-              },
-              {
-                "key": "status",
-                "value": "all",
-                "active": false,
-                "description": "enabled, disabled, or all; defaults to enabled."
-              },
-              {
-                "key": "sort",
-                "value": "name",
-                "active": true,
-                "description": "name or created_at."
-              },
-              {
-                "key": "order",
-                "value": "asc",
-                "active": true,
-                "description": "asc or desc."
-              }
-            ],
-            "headers": [],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": null,
-              "body": null
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team list returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Lists Teams with database-backed search, filters, sorting, and fixed 25-item pagination. Enable optional parameters as needed."
-          },
-          {
-            "v": "17",
-            "name": "03 - Get Team by id",
-            "method": "GET",
-            "endpoint": "<<base_url>>/teams/<<team_id>>",
-            "params": [],
-            "headers": [],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": null,
-              "body": null
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team detail returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Returns Team detail, including the temporary empty players array."
-          },
-          {
-            "v": "17",
-            "name": "04 - Update Team name",
-            "method": "PUT",
-            "endpoint": "<<base_url>>/teams/<<team_id>>",
-            "params": [],
-            "headers": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "active": true,
-                "description": "JSON request body."
-              }
-            ],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": "application/json",
-              "body": "{\n  \"name\": \"Boca Juniors A\"\n}"
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team update returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Updates only the name of an enabled Team. Sport and gender are immutable."
-          },
-          {
-            "v": "17",
-            "name": "05 - Disable Team",
-            "method": "PATCH",
-            "endpoint": "<<base_url>>/teams/<<team_id>>/disable",
-            "params": [],
-            "headers": [],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": null,
-              "body": null
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team disablement returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Disables an enabled Team and sets disabled_at. Repeating the request returns 409."
-          },
-          {
-            "v": "17",
-            "name": "06 - Re-enable Team",
-            "method": "PATCH",
-            "endpoint": "<<base_url>>/teams/<<team_id>>/enable",
-            "params": [],
-            "headers": [],
-            "auth": {
-              "authType": "inherit",
-              "authActive": true
-            },
-            "body": {
-              "contentType": null,
-              "body": null
-            },
-            "preRequestScript": "",
-            "testScript": "pw.test(\"Team re-enablement returns 200\", () => {\n  pw.expect(pw.response.status).toBe(200);\n});",
-            "requestVariables": [],
-            "responses": {},
-            "description": "Re-enables a disabled Team and clears disabled_at. Team deletion is intentionally unavailable."
-          }
-        ],
-        "auth": {
-          "authType": "bearer",
-          "authActive": true,
-          "token": "<<account_access_token>>"
-        },
-        "headers": [],
-        "variables": [],
-        "description": "Team management for active administrators and federation delegates.",
+        "description": "Administrator-only sport management.",
         "preRequestScript": "",
         "testScript": ""
       }
@@ -743,7 +541,7 @@
     },
     "headers": [],
     "variables": [],
-    "description": "Importable collection for authentication, account administration, sports, and Team management.",
+    "description": "Importable collection for authentication, account administration, and sports management.",
     "preRequestScript": "",
     "testScript": ""
   }

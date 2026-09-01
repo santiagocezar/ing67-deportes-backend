@@ -23,8 +23,8 @@
     },
     {
       "key": "requested_role",
-      "initialValue": "federation_delegate",
-      "currentValue": "federation_delegate",
+      "initialValue": "referee",
+      "currentValue": "referee",
       "secret": false
     },
     {
@@ -89,12 +89,6 @@
     },
     {
       "key": "sport_id",
-      "initialValue": "",
-      "currentValue": "",
-      "secret": false
-    },
-    {
-      "key": "team_id",
       "initialValue": "",
       "currentValue": "",
       "secret": false

@@ -20,10 +20,6 @@ class SportNotFoundError(LookupError):
     """Raised when a sport id does not exist."""
 
 
-class SportInUseError(ValueError):
-    """Raised when a Team still references a Sport."""
-
-
 _SPORT_CREATE_FIELDS = {
     "name",
     "max_players",
@@ -223,11 +219,6 @@ def delete_sport(sport_id: int) -> None:
 
     try:
         db.session.commit()
-    except IntegrityError as error:
-        db.session.rollback()
-        raise SportInUseError(
-            "The Sport cannot be deleted while Teams reference it."
-        ) from error
     except Exception:
         db.session.rollback()
         raise
