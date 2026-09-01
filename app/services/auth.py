@@ -78,9 +78,6 @@ def rotate_refresh_token(
     if auth_session is None or auth_session.revoked_at is not None:
         db.session.rollback()
         raise SessionRevokedError("The session is no longer active.")
-    if auth_session.user is None:
-        db.session.rollback()
-        raise SessionRevokedError("The user no longer exists.")
 
     if auth_session.current_refresh_jti != presented_jti:
         auth_session.revoked_at = datetime.now(timezone.utc)
@@ -124,8 +121,4 @@ def is_token_revoked(jwt_payload: dict) -> bool:
         return True
 
     auth_session = db.session.get(AuthSession, session_id)
-    return (
-        auth_session is None
-        or auth_session.revoked_at is not None
-        or auth_session.user is None
-    )
+    return auth_session is None or auth_session.revoked_at is not None

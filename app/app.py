@@ -1,7 +1,6 @@
 import os
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Mapping
 
 import click
 from dotenv import load_dotenv
@@ -19,15 +18,11 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
-def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
+def create_app() -> Flask:
     env_path = Path(__file__).resolve().parent / ".env"
     load_dotenv(env_path)
 
-    database_uri = (
-        test_config.get("SQLALCHEMY_DATABASE_URI")
-        if test_config is not None
-        else None
-    ) or os.getenv("SQLALCHEMY_DATABASE_URI")
+    database_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
     if not database_uri:
         raise RuntimeError(
             "SQLALCHEMY_DATABASE_URI is not configured. "
@@ -43,8 +38,6 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
         JWT_TOKEN_LOCATION=["headers"],
     )
-    if test_config:
-        flask_app.config.update(test_config)
 
     db.init_app(flask_app)
     jwt.init_app(flask_app)
@@ -55,7 +48,6 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
         resources={
             r"/auth(?:/.*)?": {"origins": allowed_origins},
             r"/sports(?:/.*)?": {"origins": allowed_origins},
-            r"/users(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -66,7 +58,6 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
 
     from . import models as _models
     from .models import ADMIN_USER_ROLE
-    from .routes.admin_users import users_bp
     from .routes.sports import sports_bp
     from .routes.users import auth_bp
     from .services.auth import is_token_revoked
@@ -78,7 +69,6 @@ def create_app(test_config: Mapping[str, Any] | None = None) -> Flask:
 
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(sports_bp)
-    flask_app.register_blueprint(users_bp)
 
     @jwt.token_in_blocklist_loader
     def token_in_blocklist(_jwt_header: dict, jwt_payload: dict) -> bool:

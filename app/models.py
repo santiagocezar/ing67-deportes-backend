@@ -1,27 +1,13 @@
 from datetime import date, datetime
-from typing import Any
 
-from sqlalchemy import JSON, CheckConstraint, UniqueConstraint, func, true
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import CheckConstraint, UniqueConstraint, func
 
 from .extensions import db
 
 
-USER_ROLE = "user"
-REFEREE_USER_ROLE = "referee"
-FEDERATION_DELEGATE_USER_ROLE = "federation_delegate"
 ADMIN_USER_ROLE = "administrator"
-DEFAULT_PUBLIC_ROLE = USER_ROLE
-REQUESTABLE_ROLES = (
-    REFEREE_USER_ROLE,
-    FEDERATION_DELEGATE_USER_ROLE,
-)
-USER_ROLES = (
-    USER_ROLE,
-    REFEREE_USER_ROLE,
-    FEDERATION_DELEGATE_USER_ROLE,
-    ADMIN_USER_ROLE,
-)
+DEFAULT_USER_ROLE = "referee"
+USER_ROLES = (ADMIN_USER_ROLE, DEFAULT_USER_ROLE)
 
 
 class Sport(db.Model):
@@ -35,15 +21,6 @@ class Sport(db.Model):
             "char_length(trim(name)) > 0",
             name="ck_sports_name_not_blank",
         ),
-        CheckConstraint(
-            "match_duration > 0",
-            name="ck_sports_match_duration_positive",
-        ),
-        CheckConstraint(
-            "CASE WHEN jsonb_typeof(resolution_methods) = 'array' "
-            "THEN jsonb_array_length(resolution_methods) > 0 ELSE FALSE END",
-            name="ck_sports_resolution_methods_non_empty_array",
-        ).ddl_if(dialect="postgresql"),
         UniqueConstraint("name", name="uq_sports_name"),
         UniqueConstraint(
             "normalized_name",
@@ -55,19 +32,12 @@ class Sport(db.Model):
     name = db.Column(db.String(100), nullable=False)
     normalized_name = db.Column(db.String(100), nullable=False)
     max_players = db.Column(db.Integer, nullable=False)
-    match_duration = db.Column(db.Integer, nullable=False)
-    resolution_methods = db.Column(
-        JSON().with_variant(JSONB, "postgresql"),
-        nullable=False,
-    )
 
-    def to_dict(self) -> dict[str, Any]:
+    def to_dict(self) -> dict[str, int | str]:
         return {
             "id": self.id,
             "name": self.name,
             "max_players": self.max_players,
-            "match_duration": self.match_duration,
-            "resolution_methods": self.resolution_methods,
         }
 
 
@@ -75,13 +45,8 @@ class User(db.Model):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(
-            "role IN ('user', 'referee', 'federation_delegate', 'administrator')",
+            "role IN ('administrator', 'referee')",
             name="ck_users_valid_role",
-        ),
-        CheckConstraint(
-            "requested_role IS NULL OR "
-            "requested_role IN ('referee', 'federation_delegate')",
-            name="ck_users_valid_requested_role",
         ),
     )
 
@@ -91,16 +56,8 @@ class User(db.Model):
     role = db.Column(
         db.String(20),
         nullable=False,
-        default=DEFAULT_PUBLIC_ROLE,
-        server_default=DEFAULT_PUBLIC_ROLE,
-        index=True,
-    )
-    requested_role = db.Column(db.String(30), nullable=True)
-    is_active = db.Column(
-        db.Boolean,
-        nullable=False,
-        default=True,
-        server_default=true(),
+        default=DEFAULT_USER_ROLE,
+        server_default=DEFAULT_USER_ROLE,
     )
     email = db.Column(db.String(255), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
@@ -116,14 +73,12 @@ class User(db.Model):
         cascade="all, delete-orphan",
     )
 
-    def to_dict(self) -> dict[str, bool | int | str | date | datetime | None]:
+    def to_dict(self) -> dict[str, int | str | date | datetime | None]:
         return {
             "id": self.id,
             "name": self.name,
             "birthdate": self.birthdate.isoformat(),
             "role": self.role,
-            "requested_role": self.requested_role,
-            "is_active": self.is_active,
             "email": self.email,
             "creation_date": (
                 self.creation_date.isoformat() if self.creation_date else None

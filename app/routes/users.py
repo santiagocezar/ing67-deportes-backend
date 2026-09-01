@@ -12,7 +12,6 @@ from ..services.auth import (
 )
 from ..services.users import (
     DuplicateEmailError,
-    InvalidRequestedRoleError,
     UserValidationError,
     authenticate_user,
     create_user,
@@ -40,8 +39,6 @@ def signup():
 
     try:
         user = create_user(data)
-    except InvalidRequestedRoleError as error:
-        return error_response("invalid_requested_role", str(error), 422)
     except UserValidationError as error:
         return error_response("validation_error", str(error), 422)
     except DuplicateEmailError as error:
@@ -76,15 +73,7 @@ def login():
             422,
         )
 
-    try:
-        user = authenticate_user(email, password)
-    except SQLAlchemyError:
-        current_app.logger.exception("Could not authenticate user")
-        return error_response(
-            "service_unavailable",
-            "The database is temporarily unavailable.",
-            503,
-        )
+    user = authenticate_user(email, password)
     if user is None:
         return error_response(
             "invalid_credentials",
@@ -150,30 +139,14 @@ def refresh():
 @auth_bp.delete("/logout")
 @jwt_required(verify_type=False)
 def logout():
-    try:
-        revoke_session(get_jwt()["sid"])
-    except SQLAlchemyError:
-        current_app.logger.exception("Could not revoke auth session")
-        return error_response(
-            "service_unavailable",
-            "The database is temporarily unavailable.",
-            503,
-        )
+    revoke_session(get_jwt()["sid"])
     return "", 204
 
 
 @auth_bp.get("/me")
 @jwt_required()
 def me():
-    try:
-        user = get_user(get_jwt_identity())
-    except SQLAlchemyError:
-        current_app.logger.exception("Could not load current user")
-        return error_response(
-            "service_unavailable",
-            "The database is temporarily unavailable.",
-            503,
-        )
+    user = get_user(get_jwt_identity())
     if user is None:
         return error_response("user_not_found", "The user no longer exists.", 404)
     return jsonify(user=user.to_dict()), 200

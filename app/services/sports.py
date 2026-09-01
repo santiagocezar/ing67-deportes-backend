@@ -1,4 +1,3 @@
-import re
 import unicodedata
 from typing import Any, Mapping
 
@@ -18,16 +17,6 @@ class DuplicateSportNameError(ValueError):
 
 class SportNotFoundError(LookupError):
     """Raised when a sport id does not exist."""
-
-
-_SPORT_CREATE_FIELDS = {
-    "name",
-    "max_players",
-    "match_duration",
-    "resolution_methods",
-}
-_RESOLUTION_METHOD_FIELDS = {"code", "name"}
-_SNAKE_CASE_PATTERN = re.compile(r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
 
 
 def _normalize_name(value: Any) -> tuple[str, str]:
@@ -61,68 +50,6 @@ def _validate_max_players(value: Any) -> int:
     return value
 
 
-def _validate_match_duration(value: Any) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise SportValidationError("match_duration must be an integer.")
-    if value <= 0:
-        raise SportValidationError("match_duration must be greater than zero.")
-    return value
-
-
-def _validate_resolution_methods(value: Any) -> list[dict[str, str]]:
-    if not isinstance(value, list) or not value:
-        raise SportValidationError(
-            "resolution_methods must be a non-empty array."
-        )
-
-    validated_methods: list[dict[str, str]] = []
-    seen_codes: set[str] = set()
-    seen_names: set[str] = set()
-
-    for index, method in enumerate(value):
-        if not isinstance(method, dict):
-            raise SportValidationError(
-                f"resolution_methods[{index}] must be an object."
-            )
-        if set(method) != _RESOLUTION_METHOD_FIELDS:
-            raise SportValidationError(
-                f"resolution_methods[{index}] must contain only code and name."
-            )
-
-        code = method.get("code")
-        name = method.get("name")
-        if not isinstance(code, str) or not code.strip():
-            raise SportValidationError(
-                f"resolution_methods[{index}].code must be a non-blank string."
-            )
-        code = code.strip()
-        if not _SNAKE_CASE_PATTERN.fullmatch(code):
-            raise SportValidationError(
-                f"resolution_methods[{index}].code must use snake_case."
-            )
-        if not isinstance(name, str) or not name.strip():
-            raise SportValidationError(
-                f"resolution_methods[{index}].name must be a non-blank string."
-            )
-        display_name = " ".join(name.split())
-        normalized_name = display_name.casefold()
-
-        if code in seen_codes:
-            raise SportValidationError(
-                "resolution method codes must be unique within a sport."
-            )
-        if normalized_name in seen_names:
-            raise SportValidationError(
-                "resolution method names must be unique within a sport."
-            )
-
-        seen_codes.add(code)
-        seen_names.add(normalized_name)
-        validated_methods.append({"code": code, "name": display_name})
-
-    return validated_methods
-
-
 def list_sports() -> list[Sport]:
     return list(
         db.session.execute(
@@ -139,20 +66,8 @@ def get_sport(sport_id: int) -> Sport:
 
 
 def create_sport(data: Mapping[str, Any]) -> Sport:
-    unexpected_fields = sorted(
-        str(field) for field in set(data) - _SPORT_CREATE_FIELDS
-    )
-    if unexpected_fields:
-        raise SportValidationError(
-            f"Unexpected fields: {', '.join(unexpected_fields)}."
-        )
-
     display_name, normalized_name = _normalize_name(data.get("name"))
     max_players = _validate_max_players(data.get("max_players"))
-    match_duration = _validate_match_duration(data.get("match_duration"))
-    resolution_methods = _validate_resolution_methods(
-        data.get("resolution_methods")
-    )
 
     duplicate_id = db.session.execute(
         db.select(Sport.id).where(Sport.normalized_name == normalized_name)
@@ -164,8 +79,6 @@ def create_sport(data: Mapping[str, Any]) -> Sport:
         name=display_name,
         normalized_name=normalized_name,
         max_players=max_players,
-        match_duration=match_duration,
-        resolution_methods=resolution_methods,
     )
     db.session.add(sport)
 

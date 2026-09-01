@@ -14,11 +14,9 @@ disciplinary sanctions, and pre-match player verification using facial recogniti
 Main users:
 
 - **Administrator**: manages sports, competitions, teams, players, rosters, player photos,
-  historical imports, configuration, and account approval.
-- **Federation delegate**: approved operational account for future federation workflows.
+  historical imports, and configuration.
 - **Referee**: manages assigned matches, performs pre-match group scans, reviews player
   eligibility, manually resolves recognition failures, and records/consults sanctions.
-- **User**: pending public account with no access to business resources until approval.
 
 Initial sports:
 - Football
@@ -77,8 +75,7 @@ Do not invent paths. Verify a file/folder exists before editing it.
 
 ## Hard rules
 
-1. **The current approved requirements and versioned schema are the data-model source
-   of truth. Do not rely on obsolete DER versions.**
+1. **The approved DER is the data-model source of truth.**
 2. Do not add/remove entities, foreign keys, constraints, or relationships without approval.
 3. Do not silently change business rules to simplify implementation.
 4. Never store persistent business data only in Python memory.
@@ -101,30 +98,6 @@ Do not invent paths. Verify a file/folder exists before editing it.
 ---
 
 ## Core business rules
-
-### Account approval and roles
-
-The canonical roles are `user`, `referee`, `federation_delegate`, and
-`administrator`.
-
-Public signup always creates `role = user` and requires `requested_role` to be either
-`referee` or `federation_delegate`. Only an administrator may approve a pending account,
-and approval assigns exactly the stored requested role.
-
-Pending users may use only authentication self-service. Disabled approved accounts keep
-their role and may log in, refresh, log out, and consult their own account, but every
-business endpoint must reject them.
-
-Authorization must use JWT identity and active session for authentication, then load the
-current `User` row from PostgreSQL for role and account-state decisions. Never authorize
-business access from a JWT role claim alone.
-
-### Sport match configuration
-
-`Sport.max_players`, `Sport.match_duration`, and `Sport.resolution_methods` are required
-and immutable after creation. Match duration is a positive whole number of minutes.
-Resolution methods are stored as an ordered, non-empty PostgreSQL JSONB array of unique
-`{code, name}` objects; codes use English `snake_case` identifiers.
 
 ### Player-team membership
 
