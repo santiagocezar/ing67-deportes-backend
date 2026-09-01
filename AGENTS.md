@@ -34,6 +34,9 @@ Initial sports:
 - Python
 - Flask
 - SQLAlchemy
+- Pydantic v2
+- `flask-openapi3` v4
+- OpenAPI 3.1
 
 ### Database
 - PostgreSQL
@@ -56,15 +59,20 @@ Backend structure:
 app/
 ├── app.py
 ├── models.py
+├── schemas/
 ├── routes/
 ├── services/
 └── .env
+
+docs/
+└── openapi.json
 ```
 
 Respect this structure unless the team explicitly changes it.
 
 - `app.py`: Flask application creation/configuration.
-- `models.py`: SQLAlchemy models and relationships.
+- `models.py`: SQLAlchemy persistence models and relationships.
+- `schemas/`: Pydantic request, path, query, and response contracts.
 - `routes/`: HTTP endpoints/controllers.
 - `services/`: business logic and reusable application operations.
 - `.env`: local environment configuration; never commit real secrets.
@@ -75,8 +83,10 @@ Do not invent paths. Verify a file/folder exists before editing it.
 
 ## Hard rules
 
-1. **The approved DER is the data-model source of truth.**
-2. Do not add/remove entities, foreign keys, constraints, or relationships without approval.
+1. Implemented SQLAlchemy models and versioned migrations are the source of truth for
+   the current database.
+2. Do not add/remove entities, foreign keys, constraints, or relationships outside an
+   explicitly approved task.
 3. Do not silently change business rules to simplify implementation.
 4. Never store persistent business data only in Python memory.
 5. PostgreSQL is the persistent data source.
@@ -94,81 +104,29 @@ Do not invent paths. Verify a file/folder exists before editing it.
 17. **Never choose or implement a facial recognition model, embedding dimension,
     similarity metric, threshold, or PostgreSQL representation without explicit approval.**
 18. If domain behavior is ambiguous, ask before implementing.
+19. **Code quality is mandatory.** Keep code readable, efficient, cohesive, and easy to
+    maintain. Avoid large files and long functions by separating responsibilities along
+    the approved architecture, without creating speculative or unnecessary abstractions.
+20. Treat documentation as part of the implementation. Keep public API, setup, and
+    architectural documentation synchronized with behavior.
+21. Before writing a large amount of custom code for a generic technical concern, check
+    whether a compatible, maintained library would materially reduce complexity. Do not
+    add it automatically: explain the benefit and ask for explicit approval first.
 
 ---
 
-## Core business rules
+## Deferred competition domain
 
-### Player-team membership
+Competition behavior is unresolved and must not be implemented without a separately
+approved task.
 
-Use `Plantel`, not `Player.team`.
+The only approved deferred-domain statements are:
 
-Do not overwrite historical membership.
-
-### Competition membership
-
-Use `Participation` for Team ↔ Competition.
-
-Do not infer participation only because a team appears in a match.
-
-### Duplicate player rule
-
-A player must not be assigned to more than one team within the same competition.
-
-This is a critical invariant.
-
-Do not rely only on frontend validation.
-Backend logic must reject the conflict and the database should enforce it where the
-final schema permits a reliable constraint.
-
-### Match validation
-
-A match must reference:
-- one competition;
-- two different teams;
-- one referee.
-
-Teams must be valid participants in the match competition.
-
-### Recognition vs eligibility
-
-Never treat facial recognition as automatic authorization.
-
-```text
-Face recognition
-      ↓
-Player identification
-      ↓
-Business-rule validation
-      ↓
-Eligibility result
-```
-
-A correctly recognized player may still be ineligible.
-
-### Manual validation
-
-When automatic recognition fails or is ambiguous, the referee must be able to resolve
-the case manually according to the approved workflow.
-
-Do not silently convert an unresolved face into a confirmed player.
-
-### Recognition incidents
-
-If a scan/photo has recognition problems, the system must preserve the information
-required to resolve it later.
-
-Do not discard the scan simply because automatic recognition failed.
-
-### Historical import
-
-Importing teams/rosters from previous competitions must not:
-- duplicate existing players unintentionally;
-- duplicate teams unintentionally;
-- destroy historical Plantel records;
-- violate the one-team-per-player-per-competition rule.
-
-If conflict behavior is not defined, ask.
+- A Player may be associated with multiple Teams globally.
+- Within one Competition, a Player may represent at most one participating Team.
+- Competition rosters will be consulted in Competition context.
+- A Match must not accept an empty or incomplete Team.
+- Do not create Competition-related models merely to support Team management.
 
 ---
 
@@ -251,6 +209,16 @@ Never return raw SQL/database errors to API clients.
 
 Use consistent REST-style endpoints and HTTP methods.
 
+Every new or changed endpoint must:
+
+- use Pydantic v2 for its public request/path/query and response contracts;
+- reject unknown request fields;
+- remain represented in the generated OpenAPI 3.1 contract;
+- regenerate and commit `docs/openapi.json` in the same change.
+
+Missing, malformed, incorrectly declared, or non-object JSON uses `400`. A valid JSON
+object that fails its Pydantic contract uses `422` with safe structured details.
+
 Typical patterns:
 
 ```text
@@ -290,16 +258,29 @@ Use:
 - `CHECK`;
 - indexes;
 
-when justified by the DER and business invariants.
+when justified by implemented models and business invariants.
 
 Do not add indexes blindly.
 
 Do not manually edit production/shared schemas as a substitute for reproducible schema
 changes.
 
-The project is **not using Flask-Migrate/Alembic** unless the team later approves it.
+Flask-Migrate/Alembic is used. Every implemented schema change requires a reviewed,
+versioned migration.
 
-Do not introduce those tools automatically.
+Beginning with Team implementation, the actual DER must live in a version-controlled
+PlantUML `.puml` file. Update it in the same change whenever implemented models or
+relationships change. Do not add speculative entities to that diagram.
+
+---
+
+## Documentation responsibilities
+
+- Keep `readme.md` focused on installation, configuration, commands, and migrations.
+- Keep `documentation.md` synchronized with public flows, endpoints, payloads, errors,
+  and authorization behavior.
+- Treat generated `docs/openapi.json` as the importable API contract for Hoppscotch.
+- Never hand-edit the generated contract or maintain a second manual API specification.
 
 ---
 
@@ -392,22 +373,20 @@ If needed, provide an `.env.example` with placeholders only.
 Every meaningful feature should include tests appropriate to its risk.
 
 Prioritize tests for:
-- duplicate player assignments;
-- Plantel history;
-- participation validation;
-- match validation;
-- sanctions;
-- recognition-result handling;
-- manual validation;
+- Pydantic request and response contracts;
+- authentication, refresh rotation, reuse detection, and logout;
+- role-based authorization;
+- database conflicts and transaction rollback;
+- OpenAPI security, operation coverage, and generated-contract drift;
 - failed transactions.
 
 Test both happy paths and failure paths.
 
 Important negative cases include:
 - nonexistent IDs;
-- duplicate assignments;
-- invalid team/competition combinations;
-- same team on both sides of a match;
+- duplicate unique values;
+- missing, malformed, non-object, and unknown request fields;
+- invalid token types and insufficient roles;
 - malformed payloads;
 - failed image processing;
 - unresolved face recognition.
@@ -517,7 +496,7 @@ Before finishing:
 ## Do not guess
 
 Stop and ask if a task requires an undefined decision about:
-- DER/schema changes;
+- database schema changes;
 - player eligibility;
 - roster transfer rules;
 - sanction duration/expiration;

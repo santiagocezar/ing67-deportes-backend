@@ -1,16 +1,26 @@
+import json
 import os
 from datetime import timedelta
 from pathlib import Path
+from typing import Any, Mapping
 
 import click
 from dotenv import load_dotenv
-from flask import Flask
 from flask_migrate import stamp, upgrade
+from flask_openapi3 import Info, OpenAPI, SecurityScheme
+from pydantic import ValidationError
 from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
 
-from .errors import error_response
+from .errors import (
+    error_response,
+    require_json_object,
+    validation_error_response,
+)
 from .extensions import cors, db, jwt, migrate
+
+
+API_VERSION = "1.0.0"
 
 
 def _cors_origins() -> list[str]:
@@ -18,18 +28,84 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in configured.split(",") if origin.strip()]
 
 
-def create_app() -> Flask:
+def _environment_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"{name} must be true or false.")
+
+
+def _validation_summary(error: ValidationError) -> str:
+    messages: list[str] = []
+    for item in error.errors(
+        include_url=False,
+        include_context=False,
+        include_input=False,
+    ):
+        field = ".".join(str(part) for part in item.get("loc", ()))
+        message = str(item.get("msg", "Invalid value"))
+        messages.append(f"{field}: {message}" if field else message)
+    return "; ".join(messages)
+
+
+def create_app(
+    config_overrides: Mapping[str, Any] | None = None,
+) -> OpenAPI:
     env_path = Path(__file__).resolve().parent / ".env"
     load_dotenv(env_path)
 
-    database_uri = os.getenv("SQLALCHEMY_DATABASE_URI")
+    overrides = dict(config_overrides or {})
+    database_uri = overrides.get(
+        "SQLALCHEMY_DATABASE_URI",
+        os.getenv("SQLALCHEMY_DATABASE_URI"),
+    )
     if not database_uri:
         raise RuntimeError(
             "SQLALCHEMY_DATABASE_URI is not configured. "
             "Add it to app/.env or to the process environment."
         )
 
-    flask_app = Flask(__name__)
+    docs_enabled = bool(
+        overrides.get(
+            "API_DOCS_ENABLED",
+            _environment_flag("API_DOCS_ENABLED", True),
+        )
+    )
+    flask_app = OpenAPI(
+        __name__,
+        info=Info(
+            title="Sports App API",
+            version=API_VERSION,
+            summary="Authentication and sports management API.",
+        ),
+        security_schemes={
+            "AccessTokenAuth": SecurityScheme(
+                type="http",
+                scheme="bearer",
+                bearerFormat="JWT",
+                description="JWT access token. It expires after 15 minutes.",
+            ),
+            "RefreshTokenAuth": SecurityScheme(
+                type="http",
+                scheme="bearer",
+                bearerFormat="JWT",
+                description=(
+                    "Rotating JWT refresh token. Use it only for refresh or logout."
+                ),
+            ),
+        },
+        validation_error_status=422,
+        validation_error_callback=validation_error_response,
+        doc_ui=docs_enabled,
+        doc_prefix="",
+        doc_url="/openapi.json",
+        validate_response=False,
+    )
     flask_app.config.update(
         SQLALCHEMY_DATABASE_URI=database_uri,
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
@@ -37,7 +113,9 @@ def create_app() -> Flask:
         JWT_ACCESS_TOKEN_EXPIRES=timedelta(minutes=15),
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
         JWT_TOKEN_LOCATION=["headers"],
+        API_DOCS_ENABLED=docs_enabled,
     )
+    flask_app.config.update(overrides)
 
     db.init_app(flask_app)
     jwt.init_app(flask_app)
@@ -60,6 +138,7 @@ def create_app() -> Flask:
     from .models import ADMIN_USER_ROLE
     from .routes.sports import sports_bp
     from .routes.users import auth_bp
+    from .schemas.auth import SignupRequest
     from .services.auth import is_token_revoked
     from .services.users import (
         DuplicateEmailError,
@@ -67,8 +146,22 @@ def create_app() -> Flask:
         create_user,
     )
 
-    flask_app.register_blueprint(auth_bp)
-    flask_app.register_blueprint(sports_bp)
+    flask_app.register_api(auth_bp)
+    flask_app.register_api(sports_bp)
+    flask_app.before_request(require_json_object)
+
+    if docs_enabled:
+        swagger_view = flask_app.view_functions.get("swagger.swagger")
+        if swagger_view is None:
+            raise RuntimeError(
+                "Swagger UI is unavailable. Install flask-openapi3[swagger]."
+            )
+        flask_app.add_url_rule(
+            "/docs",
+            endpoint="swagger_docs",
+            view_func=swagger_view,
+            methods=["GET"],
+        )
 
     @jwt.token_in_blocklist_loader
     def token_in_blocklist(_jwt_header: dict, jwt_payload: dict) -> bool:
@@ -88,7 +181,21 @@ def create_app() -> Flask:
 
     @jwt.revoked_token_loader
     def revoked_token(_jwt_header: dict, _jwt_payload: dict):
-        return error_response("session_revoked", "The session is no longer active.", 401)
+        return error_response(
+            "session_revoked",
+            "The session is no longer active.",
+            401,
+        )
+
+    @flask_app.errorhandler(SQLAlchemyError)
+    def unhandled_database_error(_error: SQLAlchemyError):
+        flask_app.logger.error("Unhandled database operation failure")
+        db.session.rollback()
+        return error_response(
+            "service_unavailable",
+            "The database is temporarily unavailable.",
+            503,
+        )
 
     @flask_app.cli.command("init-db")
     def init_db_command() -> None:
@@ -120,15 +227,15 @@ def create_app() -> Flask:
     ) -> None:
         """Create an administrator without exposing a public admin signup."""
         try:
-            create_user(
-                {
-                    "name": name,
-                    "birthdate": birthdate,
-                    "email": email,
-                    "password": password,
-                },
-                role=ADMIN_USER_ROLE,
+            admin_data = SignupRequest(
+                name=name,
+                birthdate=birthdate,
+                email=email,
+                password=password,
             )
+            create_user(admin_data, role=ADMIN_USER_ROLE)
+        except ValidationError as error:
+            raise click.ClickException(_validation_summary(error)) from error
         except (UserValidationError, DuplicateEmailError) as error:
             raise click.ClickException(str(error)) from error
         except SQLAlchemyError as error:
@@ -136,5 +243,31 @@ def create_app() -> Flask:
                 "The administrator could not be created."
             ) from error
         click.echo("Administrator created successfully.")
+
+    @flask_app.cli.command("export-openapi")
+    def export_openapi_command() -> None:
+        """Export the generated OpenAPI contract for external API clients."""
+        output_path = (
+            Path(flask_app.root_path).resolve().parent
+            / "docs"
+            / "openapi.json"
+        )
+        try:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            serialized = json.dumps(
+                flask_app.api_doc,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            output_path.write_text(
+                serialized + chr(10),
+                encoding="utf-8",
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise click.ClickException(
+                "The OpenAPI contract could not be exported."
+            ) from error
+        click.echo(str(output_path))
 
     return flask_app

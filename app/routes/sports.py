@@ -1,11 +1,21 @@
 from functools import wraps
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import current_app, jsonify
 from flask_jwt_extended import get_jwt, jwt_required
+from flask_openapi3 import APIBlueprint, Tag, validate_request
 from sqlalchemy.exc import SQLAlchemyError
 
-from ..errors import error_response
+from ..errors import error_response, json_object_required
 from ..models import ADMIN_USER_ROLE
+from ..schemas.common import ErrorResponse
+from ..schemas.sports import (
+    SportCreateRequest,
+    SportEnvelope,
+    SportListResponse,
+    SportPath,
+    SportResponse,
+    SportUpdateRequest,
+)
 from ..services.sports import (
     DuplicateSportNameError,
     SportNotFoundError,
@@ -18,7 +28,19 @@ from ..services.sports import (
 )
 
 
-sports_bp = Blueprint("sports", __name__, url_prefix="/sports")
+SPORTS_TAG = Tag(
+    name="Sports",
+    description="Administrator-only sport catalogue management.",
+)
+ACCESS_SECURITY = [{"AccessTokenAuth": []}]
+
+sports_bp = APIBlueprint(
+    "sports",
+    __name__,
+    url_prefix="/sports",
+    abp_tags=[SPORTS_TAG],
+)
+
 
 def administrator_required(function):
     """Require a valid access token whose role is administrator."""
@@ -37,13 +59,8 @@ def administrator_required(function):
     return wrapper
 
 
-def _json_body() -> dict | None:
-    data = request.get_json(silent=True)
-    return data if isinstance(data, dict) else None
-
-
 def _database_unavailable(operation: str):
-    current_app.logger.exception("Could not %s sport", operation)
+    current_app.logger.error("Could not %s sport", operation)
     return error_response(
         "service_unavailable",
         "The database is temporarily unavailable.",
@@ -51,29 +68,59 @@ def _database_unavailable(operation: str):
     )
 
 
-@sports_bp.get("")
+@sports_bp.get(
+    "",
+    summary="List sports",
+    description="Returns every sport ordered by identifier.",
+    operation_id="sportsList",
+    security=ACCESS_SECURITY,
+    responses={
+        200: SportListResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
 @administrator_required
+@validate_request()
 def get_sports():
     try:
         sports = list_sports()
     except SQLAlchemyError:
         return _database_unavailable("list")
-    return jsonify(sports=[sport.to_dict() for sport in sports]), 200
+
+    payload = SportListResponse(
+        sports=[SportResponse.model_validate(sport) for sport in sports]
+    )
+    return jsonify(payload.model_dump(mode="json")), 200
 
 
-@sports_bp.post("")
+@sports_bp.post(
+    "",
+    summary="Create a sport",
+    description=(
+        "Creates a uniquely normalized sport with a maximum of 1 to 20 "
+        "players per team."
+    ),
+    operation_id="sportsCreate",
+    security=ACCESS_SECURITY,
+    responses={
+        201: SportEnvelope,
+        400: ErrorResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        409: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
 @administrator_required
-def post_sport():
-    data = _json_body()
-    if data is None:
-        return error_response(
-            "invalid_request",
-            "A JSON request body is required.",
-            400,
-        )
-
+@json_object_required
+@validate_request()
+def post_sport(body: SportCreateRequest):
     try:
-        sport = create_sport(data)
+        sport = create_sport(body)
     except SportValidationError as error:
         return error_response("validation_error", str(error), 422)
     except DuplicateSportNameError as error:
@@ -81,46 +128,62 @@ def post_sport():
     except SQLAlchemyError:
         return _database_unavailable("create")
 
-    return jsonify(sport=sport.to_dict()), 201
+    payload = SportEnvelope(sport=SportResponse.model_validate(sport))
+    return jsonify(payload.model_dump(mode="json")), 201
 
 
-@sports_bp.get("/<int:sport_id>")
+@sports_bp.get(
+    "/<int:sport_id>",
+    summary="Get a sport",
+    description="Returns one sport by identifier.",
+    operation_id="sportsGet",
+    security=ACCESS_SECURITY,
+    responses={
+        200: SportEnvelope,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
 @administrator_required
-def get_sport_by_id(sport_id: int):
+@validate_request()
+def get_sport_by_id(path: SportPath):
     try:
-        sport = get_sport(sport_id)
+        sport = get_sport(path.sport_id)
     except SportNotFoundError as error:
         return error_response("sport_not_found", str(error), 404)
     except SQLAlchemyError:
         return _database_unavailable("get")
-    return jsonify(sport=sport.to_dict()), 200
+
+    payload = SportEnvelope(sport=SportResponse.model_validate(sport))
+    return jsonify(payload.model_dump(mode="json")), 200
 
 
-@sports_bp.put("/<int:sport_id>")
+@sports_bp.put(
+    "/<int:sport_id>",
+    summary="Rename a sport",
+    description="Changes only the sport name; max_players is immutable.",
+    operation_id="sportsUpdate",
+    security=ACCESS_SECURITY,
+    responses={
+        200: SportEnvelope,
+        400: ErrorResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        409: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
 @administrator_required
-def put_sport(sport_id: int):
-    data = _json_body()
-    if data is None:
-        return error_response(
-            "invalid_request",
-            "A JSON request body is required.",
-            400,
-        )
-    if "max_players" in data:
-        return error_response(
-            "immutable_field",
-            "max_players cannot be modified after sport creation.",
-            422,
-        )
-    if set(data) - {"name"}:
-        return error_response(
-            "validation_error",
-            "Only name can be modified.",
-            422,
-        )
-
+@json_object_required
+@validate_request()
+def put_sport(path: SportPath, body: SportUpdateRequest):
     try:
-        sport = update_sport_name(sport_id, data.get("name"))
+        sport = update_sport_name(path.sport_id, body)
     except SportValidationError as error:
         return error_response("validation_error", str(error), 422)
     except DuplicateSportNameError as error:
@@ -130,14 +193,30 @@ def put_sport(sport_id: int):
     except SQLAlchemyError:
         return _database_unavailable("update")
 
-    return jsonify(sport=sport.to_dict()), 200
+    payload = SportEnvelope(sport=SportResponse.model_validate(sport))
+    return jsonify(payload.model_dump(mode="json")), 200
 
 
-@sports_bp.delete("/<int:sport_id>")
+@sports_bp.delete(
+    "/<int:sport_id>",
+    summary="Delete a sport",
+    description="Deletes one sport by identifier.",
+    operation_id="sportsDelete",
+    security=ACCESS_SECURITY,
+    responses={
+        204: None,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
 @administrator_required
-def remove_sport(sport_id: int):
+@validate_request()
+def remove_sport(path: SportPath):
     try:
-        delete_sport(sport_id)
+        delete_sport(path.sport_id)
     except SportNotFoundError as error:
         return error_response("sport_not_found", str(error), 404)
     except SQLAlchemyError:

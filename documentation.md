@@ -1,150 +1,199 @@
 # Documentación del backend de Sports App
 
-Este documento centraliza el contrato de la API, las reglas implementadas, las
-relaciones actuales y las decisiones técnicas relevantes. Debe actualizarse cuando
-cambie el comportamiento público del backend.
+Este documento describe el contrato público y los flujos que necesitan frontend, QA y
+backend. La especificación ejecutable y fuente de verdad se genera en
+[docs/openapi.json](docs/openapi.json).
 
 ## Arquitectura
 
 ```text
 Petición HTTP
     ↓
+Pydantic v2
+    ↓
 routes/
     ↓
 services/
     ↓
 models.py / PostgreSQL
+    ↓
+respuesta validada por contrato
 ```
 
-- `routes/` recibe solicitudes y construye respuestas HTTP.
-- `services/` contiene validaciones, reglas y transacciones.
-- `models.py` define las entidades persistidas y sus relaciones.
-- `extensions.py` contiene las extensiones compartidas de Flask.
-- `app.py` configura la aplicación, registra rutas y expone comandos.
+- `schemas/` define cuerpos, parámetros y respuestas públicas.
+- `routes/` gestiona HTTP, JWT, estados y traducción de errores.
+- `services/` conserva normalización, reglas, consultas y transacciones.
+- `models.py` contiene los modelos persistidos y sus restricciones.
+- `app.py` configura Flask, OpenAPI, Swagger, CORS y comandos.
 
-## Direcciones locales
+Pydantic no consulta la base de datos. Los modelos SQLAlchemy tampoco heredan de los
+esquemas Pydantic.
+
+## Direcciones y documentación
 
 - Backend Flask: `http://localhost:5000`
 - Frontend Vue: `http://localhost:5173`
+- OpenAPI 3.1: `GET /openapi.json`
+- Swagger UI: `GET /docs`
 
-Los endpoints pertenecen al backend. El origen del frontend se configura en
-`CORS_ORIGINS`. CORS utiliza orígenes explícitos y no habilita el comodín `*`.
+`API_DOCS_ENABLED=true` habilita OpenAPI y Swagger en desarrollo y pruebas. En
+producción debe configurarse `false`; ambos endpoints responderán `404`.
 
-## Modelos y relaciones
+## Validación de solicitudes
 
-### `User`
+Los objetos de entrada rechazan campos desconocidos.
 
-Representa una cuenta. Sus datos públicos son `id`, `name`, `birthdate`, `role`, `email`
-y `creation_date`. La contraseña se guarda únicamente como hash.
+- `400 Bad Request`: falta el cuerpo, el JSON está mal formado, el `Content-Type` no
+  declara JSON o el valor raíz no es un objeto.
+- `422 Unprocessable Content`: el JSON es un objeto válido, pero faltan campos o sus
+  tipos, valores o nombres no cumplen el esquema.
 
-Reglas actuales:
+Ejemplo de `422`:
 
-- `email` debe ser único.
-- La contraseña debe tener al menos ocho caracteres.
-- `birthdate` se almacena como `DATE`.
-- La edad al registrarse debe estar entre 18 y 100 años inclusive.
-- Un registro público recibe el rol `referee`.
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "Request validation failed.",
+    "details": [
+      {
+        "field": "body.name",
+        "message": "Field required",
+        "type": "missing"
+      }
+    ]
+  }
+}
+```
 
-### `AuthSession`
+`details` es opcional. Nunca contiene contraseñas, tokens, cuerpos completos, entradas
+crudas de Pydantic ni errores internos.
 
-Representa una sesión autenticada y conserva el identificador del refresh token vigente,
-su vencimiento y el momento de revocación. El token completo no se guarda.
+## Modelos actuales
+
+### User
+
+Una cuenta expone `id`, `name`, `birthdate`, `role`, `email` y `creation_date`. La
+contraseña se persiste únicamente como hash.
+
+- El email es único y se normaliza a minúsculas.
+- La contraseña requiere al menos ocho caracteres.
+- `birthdate` se recibe como `YYYY-MM-DD` y se guarda como `DATE`.
+- La edad debe estar entre 18 y 100 años inclusive.
+- El registro público siempre crea el rol `referee`.
+- El rol `administrator` sólo se crea mediante el comando de consola.
+
+### AuthSession
+
+Cada sesión conserva el identificador del refresh token vigente, su vencimiento y su
+revocación. El token completo no se almacena.
 
 ```text
 User 1 ─────── N AuthSession
 ```
 
-Un usuario puede iniciar varias sesiones. Cada sesión pertenece a un solo usuario. Al
-eliminar un usuario, sus sesiones se eliminan mediante `ON DELETE CASCADE`.
+### Sport
 
-### `Sport`
+`Sport` contiene `id`, `name`, `normalized_name` y `max_players`.
 
-Representa un deporte administrable y contiene:
+- `normalized_name` ignora mayúsculas y acentos para evitar duplicados.
+- El nombre visible se guarda con la primera letra en mayúscula.
+- `max_players` representa el máximo por equipo permitido en cancha y admite `1..20`.
+- Después de crear el deporte sólo puede modificarse `name`.
 
-- `id`: identificador.
-- `name`: nombre visible con la primera letra en mayúscula y el resto en minúscula.
-- `normalized_name`: nombre interno sin diferencias de mayúsculas ni acentos.
-- `max_players`: cantidad máxima de jugadores, entre 1 y 20 inclusive.
+## Flujo de autenticación
 
-`normalized_name` tiene una restricción única. Por eso `Fútbol`, `FUTBOL`, `futBol` y
-`fútbol` se consideran el mismo deporte incluso ante solicitudes concurrentes.
+### Registro
 
-`Sport` no tiene relación con `User` ni `AuthSession`. La autenticación solamente
-determina quién puede ejecutar sus operaciones HTTP.
+1. Frontend envía `POST /auth/signup`.
+2. Pydantic valida forma, tipos, email, contraseña y fecha.
+3. El servicio verifica unicidad y guarda el hash.
+4. El backend responde `201` con el usuario público, sin tokens.
+5. El usuario inicia sesión por separado.
 
-## Autenticación
+### Login
 
-- Access token: duración de 15 minutos.
-- Refresh token: duración máxima de 30 días.
-- Transporte: encabezado `Authorization` con esquema `Bearer`.
+1. Frontend envía email y contraseña a `POST /auth/login`.
+2. El servicio valida las credenciales.
+3. Se crea una `AuthSession` persistente.
+4. Se devuelve un access token de 15 minutos y un refresh token rotativo de hasta
+   30 días.
 
-```http
-Authorization: Bearer TOKEN
-```
+### Renovación
 
-Cada rotación invalida el refresh token anterior. Si se reutiliza, el servidor revoca la
-sesión persistida y rechaza todos sus tokens.
+1. Frontend envía el refresh token vigente a `POST /auth/refresh`.
+2. El servidor bloquea la sesión durante la operación y compara su identificador.
+3. El token anterior queda reemplazado por un access token y un refresh token nuevos.
+4. Si se reutiliza un refresh viejo, se revoca toda la sesión y se exige otro login.
 
-## API de autenticación
+Las aplicaciones cliente deben reemplazar ambos tokens de forma atómica.
 
-### `POST /auth/signup`
+### Logout
 
-Registra un usuario con rol `referee`.
+`DELETE /auth/logout` acepta access o refresh token, revoca la sesión persistida y
+responde `204`. Los tokens relacionados dejan de servir.
+
+## Endpoints de autenticación
+
+| Método y ruta | Autorización | Cuerpo | Respuesta exitosa |
+| --- | --- | --- | --- |
+| `POST /auth/signup` | Pública | `name`, `birthdate`, `email`, `password` | `201`, mensaje y usuario |
+| `POST /auth/login` | Pública | `email`, `password` | `200`, ambos tokens |
+| `POST /auth/refresh` | Refresh token | Sin cuerpo | `200`, ambos tokens nuevos |
+| `DELETE /auth/logout` | Access o refresh token | Sin cuerpo | `204` |
+| `GET /auth/me` | Access token | Sin cuerpo | `200`, usuario |
+
+Registro:
 
 ```json
 {
   "name": "Ana Example",
   "birthdate": "1995-04-20",
   "email": "ana@example.com",
-  "password": "una-contraseña-segura"
+  "password": "example-password"
 }
 ```
 
-Respuesta exitosa: `201 Created`.
-
-### `POST /auth/login`
-
-Valida credenciales, crea una sesión y devuelve ambos tokens.
+Login:
 
 ```json
 {
   "email": "ana@example.com",
-  "password": "una-contraseña-segura"
+  "password": "example-password"
 }
 ```
 
-Respuesta exitosa: `200 OK`.
+Respuesta de login o refresh:
 
 ```json
 {
-  "access_token": "...",
-  "refresh_token": "...",
+  "access_token": "<access-token>",
+  "refresh_token": "<refresh-token>",
   "token_type": "Bearer",
   "access_expires_in": 900
 }
 ```
 
-### `POST /auth/refresh`
+Los tokens se envían así:
 
-Recibe el refresh token vigente en `Authorization` y devuelve un par nuevo.
+```http
+Authorization: Bearer TOKEN
+```
 
-### `DELETE /auth/logout`
+## Flujo y endpoints de deportes
 
-Acepta un access o refresh token, revoca la sesión y responde `204 No Content`.
+Todas las operaciones requieren un access token con rol `administrator`. JWT se valida
+antes de procesar el cuerpo. No existen filtros de búsqueda.
 
-### `GET /auth/me`
+| Método y ruta | Acción | Respuesta exitosa |
+| --- | --- | --- |
+| `GET /sports` | Listar deportes por `id` | `200` |
+| `POST /sports` | Crear deporte | `201` |
+| `GET /sports/{sport_id}` | Consultar deporte | `200` |
+| `PUT /sports/{sport_id}` | Modificar sólo el nombre | `200` |
+| `DELETE /sports/{sport_id}` | Eliminar deporte | `204` |
 
-Requiere un access token y devuelve el usuario autenticado.
-
-## API de deportes — HU01
-
-Todos los endpoints requieren un access token con rol `administrator`. Un usuario sin
-token recibe `401 Unauthorized`; un usuario autenticado sin ese rol recibe
-`403 Forbidden`. No existen filtros de búsqueda.
-
-### `POST /sports`
-
-Crea un deporte.
+Creación:
 
 ```json
 {
@@ -153,7 +202,7 @@ Crea un deporte.
 }
 ```
 
-Respuesta exitosa: `201 Created`.
+Respuesta:
 
 ```json
 {
@@ -165,34 +214,7 @@ Respuesta exitosa: `201 Created`.
 }
 ```
 
-Un nombre equivalente devuelve `409 Conflict`. Un nombre inválido o `max_players`
-fuera de `1..20` devuelve `422 Unprocessable Content`.
-
-### `GET /sports`
-
-Devuelve todos los deportes ordenados por `id`.
-
-```json
-{
-  "sports": [
-    {
-      "id": 1,
-      "name": "Fútbol",
-      "max_players": 11
-    }
-  ]
-}
-```
-
-Respuesta exitosa: `200 OK`.
-
-### `GET /sports/{id}`
-
-Devuelve un deporte. Si no existe, responde `404 Not Found`.
-
-### `PUT /sports/{id}`
-
-Modifica únicamente el nombre.
+Actualización:
 
 ```json
 {
@@ -200,44 +222,50 @@ Modifica únicamente el nombre.
 }
 ```
 
-`max_players` es inmutable después de la creación. Intentar modificarlo devuelve
-`422 Unprocessable Content`. Una modificación exitosa responde `200 OK`.
-
-### `DELETE /sports/{id}`
-
-Elimina un deporte y responde `204 No Content`. Si no existe, responde `404 Not Found`.
+Enviar `max_players` en la actualización conserva el error
+`immutable_field` con estado `422`. Un nombre equivalente existente responde `409`.
 
 ## Contrato de errores
 
-```json
-{
-  "error": {
-    "code": "validation_error",
-    "message": "max_players must be between 1 and 20."
-  }
-}
+| Estado | Uso |
+| --- | --- |
+| `400` | Cuerpo ausente, mal formado, no JSON o no objeto. |
+| `401` | Token ausente, inválido, vencido, revocado o refresh reutilizado. |
+| `403` | El rol autenticado no tiene permiso. |
+| `404` | El recurso no existe. |
+| `409` | Email o nombre normalizado en conflicto. |
+| `422` | El objeto no cumple el esquema o una regla validable. |
+| `503` | Base de datos o autenticación temporalmente no disponible. |
+
+Frontend debe decidir con `error.code` y mostrar `error.message` como texto legible.
+
+## OpenAPI y Hoppscotch
+
+Regenerar el contrato después de cambiar una ruta, esquema o respuesta:
+
+```powershell
+python -m flask --app app export-openapi
 ```
 
-El frontend debe usar `error.code` para tomar decisiones y `error.message` solamente
-como mensaje legible.
+El comando escribe UTF-8 determinista en `docs/openapi.json` sin consultar ni modificar
+datos de negocio.
 
-| Estado | Uso en la API |
-| --- | --- |
-| `400 Bad Request` | El cuerpo falta o está mal formado. |
-| `401 Unauthorized` | La autenticación falta, venció, es inválida o fue revocada. |
-| `403 Forbidden` | El usuario no tiene el rol necesario. |
-| `404 Not Found` | El recurso no existe. |
-| `409 Conflict` | La solicitud entra en conflicto con el estado actual. |
-| `422 Unprocessable Content` | Un dato no cumple las reglas del negocio. |
-| `503 Service Unavailable` | La base o autenticación no está disponible temporalmente. |
+Para importar en Hoppscotch:
 
-Los estados siguen la
-[referencia HTTP de MDN](https://developer.mozilla.org/es/docs/Web/HTTP/Reference/Status).
+1. Abrir `Import`.
+2. Elegir `OpenAPI`.
+3. Subir `docs/openapi.json`, o importar `http://localhost:5000/openapi.json` con el
+   backend iniciado.
+4. Configurar `base_url=http://localhost:5000` en el entorno local.
+5. Guardar los tokens devueltos por login/refresh en variables locales de Hoppscotch.
+
+No se debe editar `docs/openapi.json` a mano ni mantener otra colección como fuente
+paralela.
 
 ## Persistencia y migraciones
 
-PostgreSQL es la fuente persistente. `db.create_all()` se usa únicamente para una base
-vacía mediante `init-db`. Las tablas existentes cambian mediante migraciones versionadas.
+PostgreSQL es la fuente persistente. `init-db` se usa sólo para una base vacía. Los
+cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones versionadas.
 
-- `78feb1bb58cd`: agrega sesiones rotativas y convierte `birthdate` a `DATE`.
-- `3e22b5f59faa`: agrega `sports` y sus restricciones de unicidad y rango.
+- `78feb1bb58cd` agrega sesiones rotativas y convierte `birthdate` a `DATE`.
+- `3e22b5f59faa` agrega `sports` y sus restricciones.

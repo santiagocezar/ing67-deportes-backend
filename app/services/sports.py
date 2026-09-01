@@ -1,10 +1,11 @@
 import unicodedata
-from typing import Any, Mapping
+from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
 from ..models import Sport
+from ..schemas.sports import SportCreateRequest, SportUpdateRequest
 
 
 class SportValidationError(ValueError):
@@ -65,9 +66,9 @@ def get_sport(sport_id: int) -> Sport:
     return sport
 
 
-def create_sport(data: Mapping[str, Any]) -> Sport:
-    display_name, normalized_name = _normalize_name(data.get("name"))
-    max_players = _validate_max_players(data.get("max_players"))
+def create_sport(data: SportCreateRequest) -> Sport:
+    display_name, normalized_name = _normalize_name(data.name)
+    max_players = _validate_max_players(data.max_players)
 
     duplicate_id = db.session.execute(
         db.select(Sport.id).where(Sport.normalized_name == normalized_name)
@@ -96,9 +97,12 @@ def create_sport(data: Mapping[str, Any]) -> Sport:
     return sport
 
 
-def update_sport_name(sport_id: int, name: Any) -> Sport:
+def update_sport_name(
+    sport_id: int,
+    data: SportUpdateRequest,
+) -> Sport:
     sport = get_sport(sport_id)
-    display_name, normalized_name = _normalize_name(name)
+    display_name, normalized_name = _normalize_name(data.name)
 
     duplicate_id = db.session.execute(
         db.select(Sport.id).where(
