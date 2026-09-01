@@ -81,7 +81,7 @@ def create_app(
         info=Info(
             title="Sports App API",
             version=API_VERSION,
-            summary="Authentication and sports management API.",
+            summary="Authentication, Sports, and Teams management API.",
         ),
         security_schemes={
             "AccessTokenAuth": SecurityScheme(
@@ -101,9 +101,7 @@ def create_app(
         },
         validation_error_status=422,
         validation_error_callback=validation_error_response,
-        doc_ui=docs_enabled,
-        doc_prefix="",
-        doc_url="/openapi.json",
+        doc_ui=False,
         validate_response=False,
     )
     flask_app.config.update(
@@ -126,9 +124,10 @@ def create_app(
         resources={
             r"/auth(?:/.*)?": {"origins": allowed_origins},
             r"/sports(?:/.*)?": {"origins": allowed_origins},
+            r"/teams(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],
-        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         supports_credentials=False,
         max_age=600,
         vary_header=True,
@@ -137,6 +136,7 @@ def create_app(
     from . import models as _models
     from .models import ADMIN_USER_ROLE
     from .routes.sports import sports_bp
+    from .routes.teams import teams_bp
     from .routes.users import auth_bp
     from .schemas.auth import SignupRequest
     from .services.auth import is_token_revoked
@@ -148,18 +148,20 @@ def create_app(
 
     flask_app.register_api(auth_bp)
     flask_app.register_api(sports_bp)
+    flask_app.register_api(teams_bp)
     flask_app.before_request(require_json_object)
 
     if docs_enabled:
-        swagger_view = flask_app.view_functions.get("swagger.swagger")
-        if swagger_view is None:
-            raise RuntimeError(
-                "Swagger UI is unavailable. Install flask-openapi3[swagger]."
-            )
+        from flask_openapi3_swagger.plugins import RegisterPlugin
+
+        swagger_blueprint = RegisterPlugin.register(
+            doc_url="/openapi.json"
+        )
+        flask_app.register_blueprint(swagger_blueprint)
         flask_app.add_url_rule(
-            "/docs",
-            endpoint="swagger_docs",
-            view_func=swagger_view,
+            "/openapi.json",
+            endpoint="openapi_document",
+            view_func=lambda: flask_app.api_doc,
             methods=["GET"],
         )
 

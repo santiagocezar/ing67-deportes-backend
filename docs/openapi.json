@@ -66,6 +66,34 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "PaginationResponse": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "PaginationResponse",
+        "type": "object"
+      },
       "SignupRequest": {
         "additionalProperties": false,
         "properties": {
@@ -123,9 +151,13 @@
         "additionalProperties": false,
         "properties": {
           "max_players": {
-            "maximum": 20,
-            "minimum": 1.0,
+            "exclusiveMinimum": 0.0,
             "title": "Max Players",
+            "type": "integer"
+          },
+          "max_players_in_game": {
+            "exclusiveMinimum": 0.0,
+            "title": "Max Players In Game",
             "type": "integer"
           },
           "name": {
@@ -135,7 +167,8 @@
         },
         "required": [
           "name",
-          "max_players"
+          "max_players",
+          "max_players_in_game"
         ],
         "title": "SportCreateRequest",
         "type": "object"
@@ -178,6 +211,10 @@
             "title": "Max Players",
             "type": "integer"
           },
+          "max_players_in_game": {
+            "title": "Max Players In Game",
+            "type": "integer"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -186,7 +223,8 @@
         "required": [
           "id",
           "name",
-          "max_players"
+          "max_players",
+          "max_players_in_game"
         ],
         "title": "SportResponse",
         "type": "object"
@@ -197,8 +235,7 @@
           "max_players": {
             "anyOf": [
               {
-                "maximum": 20,
-                "minimum": 1.0,
+                "exclusiveMinimum": 0.0,
                 "type": "integer"
               },
               {
@@ -209,6 +246,20 @@
             "readOnly": true,
             "title": "Max Players"
           },
+          "max_players_in_game": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "readOnly": true,
+            "title": "Max Players In Game"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -218,6 +269,136 @@
           "name"
         ],
         "title": "SportUpdateRequest",
+        "type": "object"
+      },
+      "TeamCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "gender_category": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender Category",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sport_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sport Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "sport_id",
+          "gender_category"
+        ],
+        "title": "TeamCreateRequest",
+        "type": "object"
+      },
+      "TeamEnvelope": {
+        "properties": {
+          "team": {
+            "$ref": "#/components/schemas/TeamResponse"
+          }
+        },
+        "required": [
+          "team"
+        ],
+        "title": "TeamEnvelope",
+        "type": "object"
+      },
+      "TeamListResponse": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/PaginationResponse"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/TeamResponse"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams",
+          "pagination"
+        ],
+        "title": "TeamListResponse",
+        "type": "object"
+      },
+      "TeamResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "gender_category": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender Category",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sport": {
+            "$ref": "#/components/schemas/SportResponse"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sport",
+          "gender_category",
+          "is_enabled",
+          "created_at",
+          "disabled_at"
+        ],
+        "title": "TeamResponse",
+        "type": "object"
+      },
+      "TeamUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "TeamUpdateRequest",
         "type": "object"
       },
       "TokenResponse": {
@@ -406,7 +587,7 @@
     }
   },
   "info": {
-    "summary": "Authentication and sports management API.",
+    "summary": "Authentication, Sports, and Teams management API.",
     "title": "Sports App API",
     "version": "1.0.0"
   },
@@ -800,7 +981,7 @@
         ]
       },
       "post": {
-        "description": "Creates a uniquely normalized sport with a maximum of 1 to 20 players per team.",
+        "description": "Creates a uniquely normalized Sport. max_players is the Team pool capacity and max_players_in_game is the simultaneous lineup limit.",
         "operationId": "sportsCreate",
         "requestBody": {
           "content": {
@@ -897,7 +1078,7 @@
     },
     "/sports/{sport_id}": {
       "delete": {
-        "description": "Deletes one sport by identifier.",
+        "description": "Deletes one Sport only when no enabled or disabled Team references it.",
         "operationId": "sportsDelete",
         "parameters": [
           {
@@ -943,6 +1124,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {
@@ -1062,7 +1253,7 @@
         ]
       },
       "put": {
-        "description": "Changes only the sport name; max_players is immutable.",
+        "description": "Changes only the Sport name; both capacity fields are immutable.",
         "operationId": "sportsUpdate",
         "parameters": [
           {
@@ -1177,6 +1368,668 @@
           "Sports"
         ]
       }
+    },
+    "/teams": {
+      "get": {
+        "description": "Returns a filtered and paginated Team catalogue. Enabled Teams are returned by default and each page contains at most 25 records.",
+        "operationId": "teamsList",
+        "parameters": [
+          {
+            "description": "Partial accent-insensitive Team-name search.",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "Partial accent-insensitive Team-name search.",
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sport_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sport Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gender_category",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "male",
+                    "female"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Gender Category"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "enabled",
+              "enum": [
+                "enabled",
+                "disabled",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "name_asc",
+              "enum": [
+                "name_asc",
+                "created_at_desc"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List Teams",
+        "tags": [
+          "Teams"
+        ]
+      },
+      "post": {
+        "description": "Creates an enabled Team. Its identity is unique by normalized name, Sport, and gender category.",
+        "operationId": "teamsCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamEnvelope"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Create a Team",
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/teams/{team_id}": {
+      "get": {
+        "description": "Returns one enabled or disabled Team by identifier.",
+        "operationId": "teamsGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamEnvelope"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a Team",
+        "tags": [
+          "Teams"
+        ]
+      },
+      "put": {
+        "description": "Changes only the name of an enabled Team. Sport and gender are immutable.",
+        "operationId": "teamsUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamEnvelope"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Rename a Team",
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/teams/{team_id}/disable": {
+      "patch": {
+        "description": "Disables a Team without deleting it. Repeated requests are idempotent.",
+        "operationId": "teamsDisable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamEnvelope"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Disable a Team",
+        "tags": [
+          "Teams"
+        ]
+      }
+    },
+    "/teams/{team_id}/enable": {
+      "patch": {
+        "description": "Enables a Team again. Repeated requests are idempotent.",
+        "operationId": "teamsEnable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamEnvelope"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Enable a Team",
+        "tags": [
+          "Teams"
+        ]
+      }
     }
   },
   "tags": [
@@ -1187,6 +2040,10 @@
     {
       "description": "Administrator-only sport catalogue management.",
       "name": "Sports"
+    },
+    {
+      "description": "Administrator-only Team catalogue management.",
+      "name": "Teams"
     }
   ]
 }

@@ -48,12 +48,14 @@ def _user() -> SimpleNamespace:
 def _sport(
     sport_id: int = 1,
     name: str = "Fútbol",
-    max_players: int = 11,
+    max_players: int = 22,
+    max_players_in_game: int = 11,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=sport_id,
         name=name,
         max_players=max_players,
+        max_players_in_game=max_players_in_game,
     )
 
 
@@ -153,7 +155,7 @@ class ApiContractTests(unittest.TestCase):
 
     def test_all_sport_success_responses_match_public_schemas(self):
         football = _sport()
-        basketball = _sport(2, "Básquet", 5)
+        basketball = _sport(2, "Básquet", 15, 5)
         headers = self._bearer(self.admin_token)
 
         with patch(
@@ -168,7 +170,11 @@ class ApiContractTests(unittest.TestCase):
             response = self.client.post(
                 "/sports",
                 headers=headers,
-                json={"name": "FÚTBOL", "max_players": 11},
+                json={
+                    "name": "FÚTBOL",
+                    "max_players": 22,
+                    "max_players_in_game": 11,
+                },
             )
         self.assertEqual(response.status_code, 201)
         SportEnvelope.model_validate(response.get_json())
@@ -248,8 +254,22 @@ class ApiContractTests(unittest.TestCase):
     def test_unknown_sport_field_and_boolean_player_limit_return_422(self):
         headers = self._bearer(self.admin_token)
         cases = [
-            {"name": "Fútbol", "max_players": 11, "unknown": "value"},
-            {"name": "Fútbol", "max_players": True},
+            {
+                "name": "Fútbol",
+                "max_players": 22,
+                "max_players_in_game": 11,
+                "unknown": "value",
+            },
+            {
+                "name": "Fútbol",
+                "max_players": True,
+                "max_players_in_game": 11,
+            },
+            {
+                "name": "Fútbol",
+                "max_players": 10,
+                "max_players_in_game": 11,
+            },
             {"name": "Fútbol"},
         ]
 
@@ -270,7 +290,7 @@ class ApiContractTests(unittest.TestCase):
         response = self.client.put(
             "/sports/1",
             headers=self._bearer(self.admin_token),
-            json={"name": "Fútbol", "max_players": 10},
+            json={"name": "Fútbol", "max_players_in_game": 10},
         )
 
         self.assertEqual(response.status_code, 422)
@@ -290,7 +310,11 @@ class ApiContractTests(unittest.TestCase):
         response = self.client.post(
             "/sports",
             headers=self._bearer(self.referee_token),
-            json={"name": "Fútbol", "max_players": 11},
+            json={
+                "name": "Fútbol",
+                "max_players": 22,
+                "max_players_in_game": 11,
+            },
         )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(
@@ -320,7 +344,11 @@ class ApiContractTests(unittest.TestCase):
             response = self.client.post(
                 "/sports",
                 headers=headers,
-                json={"name": "FUTBOL", "max_players": 11},
+                json={
+                    "name": "FUTBOL",
+                    "max_players": 22,
+                    "max_players_in_game": 11,
+                },
             )
         self.assertEqual(response.status_code, 409)
         self.assertEqual(
@@ -411,7 +439,11 @@ class ApiContractTests(unittest.TestCase):
             response = self.client.post(
                 "/sports",
                 headers=self._bearer(self.admin_token),
-                json={"name": "Vóley", "max_players": 6},
+                json={
+                    "name": "Vóley",
+                    "max_players": 12,
+                    "max_players_in_game": 6,
+                },
             )
 
         self.assertEqual(response.status_code, 503)
@@ -471,6 +503,10 @@ class ApiContractTests(unittest.TestCase):
                 "/auth/me",
                 "/sports",
                 "/sports/{sport_id}",
+                "/teams",
+                "/teams/{team_id}",
+                "/teams/{team_id}/disable",
+                "/teams/{team_id}/enable",
             },
         )
 
@@ -480,8 +516,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 10)
-        self.assertEqual(len(set(operation_ids)), 10)
+        self.assertEqual(len(operation_ids), 16)
+        self.assertEqual(len(set(operation_ids)), 16)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -501,6 +537,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("SignupRequest", contract["components"]["schemas"])
         self.assertIn("TokenResponse", contract["components"]["schemas"])
         self.assertIn("SportResponse", contract["components"]["schemas"])
+        self.assertIn("TeamResponse", contract["components"]["schemas"])
         self.assertIn("ErrorResponse", contract["components"]["schemas"])
 
         for operation in operations:
@@ -515,13 +552,15 @@ class ApiContractTests(unittest.TestCase):
         client = disabled_app.test_client()
 
         self.assertEqual(client.get("/openapi.json").status_code, 404)
-        self.assertEqual(client.get("/docs").status_code, 404)
+        self.assertEqual(client.get("/swagger").status_code, 404)
 
-    def test_swagger_is_available_when_enabled(self):
-        response = self.client.get("/docs")
+    def test_swagger_is_only_available_at_the_explicit_route(self):
+        response = self.client.get("/swagger")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "text/html")
         self.assertIn("Swagger UI", response.get_data(as_text=True))
+        self.assertEqual(self.client.get("/").status_code, 404)
+        self.assertEqual(self.client.get("/docs").status_code, 404)
 
     def test_export_is_deterministic_and_matches_committed_contract(self):
         runner = self.app.test_cli_runner()

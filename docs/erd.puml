@@ -1,0 +1,73 @@
+@startuml
+title Sports App - Implemented database model
+
+hide methods
+hide stereotypes
+skinparam linetype ortho
+
+entity "users" as users {
+  * id : INTEGER <<PK>>
+  --
+  * name : VARCHAR(100)
+  * birthdate : DATE
+  * role : VARCHAR(20) <<CHECK>>
+  * email : VARCHAR(255) <<UQ>>
+  * password_hash : VARCHAR(255)
+  * creation_date : TIMESTAMPTZ
+}
+
+entity "auth_sessions" as auth_sessions {
+  * id : VARCHAR(36) <<PK>>
+  --
+  * user_id : INTEGER <<FK>>
+  * current_refresh_jti : VARCHAR(36) <<UQ>>
+  * expires_at : TIMESTAMPTZ
+  revoked_at : TIMESTAMPTZ
+  * created_at : TIMESTAMPTZ
+  * updated_at : TIMESTAMPTZ
+}
+
+entity "sports" as sports {
+  * id : INTEGER <<PK>>
+  --
+  * name : VARCHAR(100) <<UQ>>
+  * normalized_name : VARCHAR(100) <<UQ>>
+  * max_players : INTEGER <<CHECK>>
+  * max_players_in_game : INTEGER <<CHECK>>
+}
+
+entity "teams" as teams {
+  * id : INTEGER <<PK>>
+  --
+  * name : VARCHAR(100)
+  * normalized_name : VARCHAR(100)
+  * sport_id : INTEGER <<FK>>
+  * gender_category : VARCHAR(10) <<CHECK>>
+  * is_enabled : BOOLEAN <<CHECK>>
+  * created_at : TIMESTAMPTZ
+  disabled_at : TIMESTAMPTZ
+  --
+  UQ (normalized_name, sport_id, gender_category)
+}
+
+users ||--o{ auth_sessions : owns
+sports ||--o{ teams : classifies
+
+note right of users
+  role IN ('administrator', 'referee')
+end note
+
+note right of sports
+  max_players > 0
+  max_players_in_game > 0
+  max_players_in_game <= max_players
+end note
+
+note right of teams
+  gender_category IN ('male', 'female')
+  enabled => disabled_at IS NULL
+  disabled => disabled_at IS NOT NULL
+  sport deletion is restricted
+end note
+
+@enduml

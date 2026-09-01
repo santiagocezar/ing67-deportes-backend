@@ -72,8 +72,10 @@ Ejecutar el script desde la raíz del repositorio:
 psql -U USER -p PORT -d DATABASE -f scripts/initialize_sports.sql
 ```
 
-El script precarga Fútbol con 11 jugadores por equipo y Básquet con 5. Puede ejecutarse
-más de una vez porque ignora nombres normalizados existentes.
+El script precarga Fútbol con un plantel máximo de 22 jugadores y 11 simultáneos en
+cancha, y Básquet con 15 y 5 respectivamente. Puede ejecutarse más de una vez porque
+ignora nombres normalizados existentes. Primero deben estar aplicadas todas las
+migraciones.
 
 ## Creación del primer administrador
 
@@ -93,7 +95,7 @@ python -m flask --app app run --debug
 - Backend: `http://localhost:5000`
 - Frontend Vue: `http://localhost:5173`
 - Contrato OpenAPI: `http://localhost:5000/openapi.json`
-- Swagger UI: `http://localhost:5000/docs`
+- Swagger UI: `http://localhost:5000/swagger`
 
 ## Exportación de OpenAPI y Hoppscotch
 
@@ -110,6 +112,17 @@ la documentación habilitada.
 
 No se mantiene una colección manual paralela: el contrato OpenAPI generado es la fuente
 de verdad para Hoppscotch.
+
+## Diagrama de base de datos
+
+El DER actual está definido en `docs/erd.puml`. Si PlantUML está instalado, se puede
+renderizar desde la raíz del repositorio con:
+
+```powershell
+plantuml docs/erd.puml
+```
+
+El archivo se actualiza junto con cada cambio de modelos o relaciones implementadas.
 
 ## Pruebas
 

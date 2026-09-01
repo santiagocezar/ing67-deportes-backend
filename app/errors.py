@@ -23,6 +23,8 @@ def _validation_source(location: tuple[Any, ...]) -> str:
     first_part = str(location[0]) if location else ""
     if first_part and first_part in (request.view_args or {}):
         return "path"
+    if first_part and first_part in request.args:
+        return "query"
     return "body"
 
 

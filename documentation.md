@@ -34,7 +34,7 @@ esquemas Pydantic.
 - Backend Flask: `http://localhost:5000`
 - Frontend Vue: `http://localhost:5173`
 - OpenAPI 3.1: `GET /openapi.json`
-- Swagger UI: `GET /docs`
+- Swagger UI: `GET /swagger`
 
 `API_DOCS_ENABLED=true` habilita OpenAPI y Swagger en desarrollo y pruebas. En
 producción debe configurarse `false`; ambos endpoints responderán `404`.
@@ -94,12 +94,35 @@ User 1 ─────── N AuthSession
 
 ### Sport
 
-`Sport` contiene `id`, `name`, `normalized_name` y `max_players`.
+`Sport` contiene `id`, `name`, `normalized_name`, `max_players` y
+`max_players_in_game`.
 
 - `normalized_name` ignora mayúsculas y acentos para evitar duplicados.
 - El nombre visible se guarda con la primera letra en mayúscula.
-- `max_players` representa el máximo por equipo permitido en cancha y admite `1..20`.
+- `max_players` representa la capacidad máxima del plantel del equipo.
+- `max_players_in_game` representa cuántos jugadores del equipo pueden estar en cancha
+  simultáneamente y nunca puede superar `max_players`.
+- Ambas capacidades son enteros positivos, obligatorios e inmutables.
 - Después de crear el deporte sólo puede modificarse `name`.
+
+### Team
+
+Un equipo expone `id`, `name`, el objeto `sport`, `gender_category`, `is_enabled`,
+`created_at` y `disabled_at`.
+
+- `gender_category` sólo admite `male` o `female`.
+- La identidad única combina nombre normalizado, deporte y categoría de género. Por eso
+  el mismo nombre puede existir en otro deporte o categoría.
+- La comparación de nombres ignora espacios repetidos, mayúsculas y acentos, pero el
+  nombre visible conserva las mayúsculas elegidas por el administrador.
+- Al crearse queda habilitado y `disabled_at` es `null`.
+- Deshabilitar no elimina el registro ni libera su nombre; habilitar lo recupera.
+- Un equipo deshabilitado no puede renombrarse hasta ser habilitado otra vez.
+- Deporte y categoría de género son inmutables y no existe eliminación física.
+
+```text
+Sport 1 ─────── N Team
+```
 
 ## Flujo de autenticación
 
@@ -198,7 +221,8 @@ Creación:
 ```json
 {
   "name": "FÚTBOL",
-  "max_players": 11
+  "max_players": 22,
+  "max_players_in_game": 11
 }
 ```
 
@@ -209,7 +233,8 @@ Respuesta:
   "sport": {
     "id": 1,
     "name": "Fútbol",
-    "max_players": 11
+    "max_players": 22,
+    "max_players_in_game": 11
   }
 }
 ```
@@ -222,8 +247,115 @@ Actualización:
 }
 ```
 
-Enviar `max_players` en la actualización conserva el error
+Enviar cualquiera de las dos capacidades en la actualización produce
 `immutable_field` con estado `422`. Un nombre equivalente existente responde `409`.
+Eliminar un deporte referenciado por cualquier equipo, incluso deshabilitado, responde
+`409` con `sport_in_use`.
+
+## Flujo y endpoints de equipos
+
+Todas las operaciones requieren un access token activo cuyo claim `role` sea
+`administrator`. El frontend obtiene ese token mediante `POST /auth/login` y lo envía
+como `Authorization: Bearer TOKEN`.
+
+### Creación
+
+1. El frontend obtiene o lista los deportes para conocer `sport_id`.
+2. Envía nombre, deporte y categoría a `POST /teams`.
+3. Pydantic valida el cuerpo y el servicio comprueba que el deporte exista.
+4. El nombre se compacta para mostrarlo y se normaliza para detectar duplicados.
+5. El backend crea el equipo habilitado y responde `201`.
+
+```json
+{
+  "name": "Águilas FC",
+  "sport_id": 1,
+  "gender_category": "female"
+}
+```
+
+El deporte inexistente produce `404 sport_not_found`. Un nombre equivalente dentro del
+mismo deporte y categoría produce `409 team_name_conflict`.
+
+### Consulta y listado
+
+| Método y ruta | Acción | Respuesta exitosa |
+| --- | --- | --- |
+| `GET /teams` | Listar, filtrar, ordenar y paginar | `200` |
+| `GET /teams/{team_id}` | Consultar un equipo habilitado o deshabilitado | `200` |
+| `POST /teams` | Crear un equipo habilitado | `201` |
+| `PUT /teams/{team_id}` | Modificar sólo el nombre | `200` |
+| `PATCH /teams/{team_id}/disable` | Deshabilitar sin eliminar | `200` |
+| `PATCH /teams/{team_id}/enable` | Volver a habilitar | `200` |
+
+No existe `DELETE /teams/{team_id}`.
+
+`GET /teams` acepta estos parámetros opcionales:
+
+| Parámetro | Valores | Predeterminado | Uso |
+| --- | --- | --- | --- |
+| `search` | texto | ninguno | Coincidencia parcial de nombre sin distinguir mayúsculas ni acentos |
+| `sport_id` | entero positivo | ninguno | Filtra por deporte; uno inexistente responde `404` |
+| `gender_category` | `male`, `female` | ninguno | Filtra por categoría |
+| `status` | `enabled`, `disabled`, `all` | `enabled` | Selecciona el estado administrativo |
+| `sort` | `name_asc`, `created_at_desc` | `name_asc` | Orden estable por nombre o creación |
+| `page` | entero positivo | `1` | Página solicitada |
+
+Los filtros se combinan con `AND`. El tamaño es fijo en 25 registros; no se acepta un
+parámetro para cambiarlo. Una página fuera de rango responde `200` con `teams: []` y
+mantiene los totales reales.
+
+Ejemplo:
+
+```http
+GET /teams?search=agui&sport_id=1&gender_category=female&status=enabled&sort=name_asc&page=1
+```
+
+Respuesta:
+
+```json
+{
+  "teams": [
+    {
+      "id": 1,
+      "name": "Águilas FC",
+      "sport": {
+        "id": 1,
+        "name": "Fútbol",
+        "max_players": 22,
+        "max_players_in_game": 11
+      },
+      "gender_category": "female",
+      "is_enabled": true,
+      "created_at": "2026-09-01T12:00:00Z",
+      "disabled_at": null
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "per_page": 25,
+    "total_items": 1,
+    "total_pages": 1
+  }
+}
+```
+
+### Renombrado y estado
+
+El renombrado recibe únicamente:
+
+```json
+{
+  "name": "Águilas del Sur"
+}
+```
+
+Enviar `sport_id`, `gender_category`, estado u otro campo produce `422`. Renombrar un
+equipo deshabilitado produce `409 team_disabled`.
+
+Los endpoints `disable` y `enable` no reciben cuerpo. Son idempotentes: repetir la misma
+acción responde `200` y conserva un estado consistente. Al deshabilitar,
+`disabled_at` recibe la fecha; al habilitar vuelve a `null`.
 
 ## Contrato de errores
 
@@ -233,7 +365,7 @@ Enviar `max_players` en la actualización conserva el error
 | `401` | Token ausente, inválido, vencido, revocado o refresh reutilizado. |
 | `403` | El rol autenticado no tiene permiso. |
 | `404` | El recurso no existe. |
-| `409` | Email o nombre normalizado en conflicto. |
+| `409` | Identidad duplicada, equipo deshabilitado o deporte todavía referenciado. |
 | `422` | El objeto no cumple el esquema o una regla validable. |
 | `503` | Base de datos o autenticación temporalmente no disponible. |
 
@@ -269,3 +401,7 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 
 - `78feb1bb58cd` agrega sesiones rotativas y convierte `birthdate` a `DATE`.
 - `3e22b5f59faa` agrega `sports` y sus restricciones.
+- `a8c4e12f6b90` separa las capacidades de deporte y agrega `teams`, estados,
+  restricciones y relación con `sports`.
+
+El DER de las entidades realmente implementadas se mantiene en `docs/erd.puml`.

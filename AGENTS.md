@@ -65,6 +65,7 @@ app/
 └── .env
 
 docs/
+├── erd.puml
 └── openapi.json
 ```
 
@@ -268,9 +269,9 @@ changes.
 Flask-Migrate/Alembic is used. Every implemented schema change requires a reviewed,
 versioned migration.
 
-Beginning with Team implementation, the actual DER must live in a version-controlled
-PlantUML `.puml` file. Update it in the same change whenever implemented models or
-relationships change. Do not add speculative entities to that diagram.
+The actual DER lives in the version-controlled `docs/erd.puml` PlantUML file. Every
+implemented model, column, constraint, or relationship change must update it in the same
+change. Grow the diagram incrementally and never add speculative entities to it.
 
 ---
 

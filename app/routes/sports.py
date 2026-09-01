@@ -1,12 +1,8 @@
-from functools import wraps
-
 from flask import current_app, jsonify
-from flask_jwt_extended import get_jwt, jwt_required
 from flask_openapi3 import APIBlueprint, Tag, validate_request
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..errors import error_response, json_object_required
-from ..models import ADMIN_USER_ROLE
 from ..schemas.common import ErrorResponse
 from ..schemas.sports import (
     SportCreateRequest,
@@ -18,6 +14,7 @@ from ..schemas.sports import (
 )
 from ..services.sports import (
     DuplicateSportNameError,
+    SportInUseError,
     SportNotFoundError,
     SportValidationError,
     create_sport,
@@ -26,37 +23,19 @@ from ..services.sports import (
     list_sports,
     update_sport_name,
 )
+from .authorization import ACCESS_SECURITY, administrator_required
 
 
 SPORTS_TAG = Tag(
     name="Sports",
     description="Administrator-only sport catalogue management.",
 )
-ACCESS_SECURITY = [{"AccessTokenAuth": []}]
-
 sports_bp = APIBlueprint(
     "sports",
     __name__,
     url_prefix="/sports",
     abp_tags=[SPORTS_TAG],
 )
-
-
-def administrator_required(function):
-    """Require a valid access token whose role is administrator."""
-
-    @wraps(function)
-    @jwt_required()
-    def wrapper(*args, **kwargs):
-        if get_jwt().get("role") != ADMIN_USER_ROLE:
-            return error_response(
-                "administrator_required",
-                "Administrator permissions are required.",
-                403,
-            )
-        return function(*args, **kwargs)
-
-    return wrapper
 
 
 def _database_unavailable(operation: str):
@@ -100,8 +79,8 @@ def get_sports():
     "",
     summary="Create a sport",
     description=(
-        "Creates a uniquely normalized sport with a maximum of 1 to 20 "
-        "players per team."
+        "Creates a uniquely normalized Sport. max_players is the Team pool "
+        "capacity and max_players_in_game is the simultaneous lineup limit."
     ),
     operation_id="sportsCreate",
     security=ACCESS_SECURITY,
@@ -164,7 +143,9 @@ def get_sport_by_id(path: SportPath):
 @sports_bp.put(
     "/<int:sport_id>",
     summary="Rename a sport",
-    description="Changes only the sport name; max_players is immutable.",
+    description=(
+        "Changes only the Sport name; both capacity fields are immutable."
+    ),
     operation_id="sportsUpdate",
     security=ACCESS_SECURITY,
     responses={
@@ -200,7 +181,9 @@ def put_sport(path: SportPath, body: SportUpdateRequest):
 @sports_bp.delete(
     "/<int:sport_id>",
     summary="Delete a sport",
-    description="Deletes one sport by identifier.",
+    description=(
+        "Deletes one Sport only when no enabled or disabled Team references it."
+    ),
     operation_id="sportsDelete",
     security=ACCESS_SECURITY,
     responses={
@@ -208,6 +191,7 @@ def put_sport(path: SportPath, body: SportUpdateRequest):
         401: ErrorResponse,
         403: ErrorResponse,
         404: ErrorResponse,
+        409: ErrorResponse,
         422: ErrorResponse,
         503: ErrorResponse,
     },
@@ -219,6 +203,8 @@ def remove_sport(path: SportPath):
         delete_sport(path.sport_id)
     except SportNotFoundError as error:
         return error_response("sport_not_found", str(error), 404)
+    except SportInUseError as error:
+        return error_response("sport_in_use", str(error), 409)
     except SQLAlchemyError:
         return _database_unavailable("delete")
     return "", 204

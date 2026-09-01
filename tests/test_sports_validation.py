@@ -3,6 +3,7 @@ import unittest
 from app.services.sports import (
     SportValidationError,
     _normalize_name,
+    _validate_capacities,
     _validate_max_players,
 )
 
@@ -25,16 +26,23 @@ class SportNameNormalizationTests(unittest.TestCase):
             _normalize_name("   ")
 
 
-class SportMaxPlayersValidationTests(unittest.TestCase):
-    def test_accepts_range_boundaries(self):
+class SportCapacityValidationTests(unittest.TestCase):
+    def test_accepts_positive_capacities_without_the_old_upper_limit(self):
         self.assertEqual(_validate_max_players(1), 1)
-        self.assertEqual(_validate_max_players(20), 20)
+        self.assertEqual(_validate_max_players(22), 22)
 
-    def test_rejects_values_outside_range(self):
-        for value in (0, 21, -1):
+    def test_rejects_non_positive_values(self):
+        for value in (0, -1):
             with self.subTest(value=value):
                 with self.assertRaises(SportValidationError):
                     _validate_max_players(value)
+
+    def test_rejects_more_players_in_game_than_in_the_team_pool(self):
+        with self.assertRaises(SportValidationError):
+            _validate_capacities(10, 11)
+
+    def test_accepts_valid_total_and_in_game_capacities(self):
+        self.assertEqual(_validate_capacities(22, 11), (22, 11))
 
     def test_rejects_non_integer_values(self):
         for value in (True, 11.0, "11", None):
