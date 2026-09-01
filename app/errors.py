@@ -93,13 +93,6 @@ def _json_object_error() -> tuple[Response, int] | None:
     return None
 
 
-def require_json_object() -> tuple[Response, int] | None:
-    """Validate public JSON bodies before automatic schema validation."""
-    if request.endpoint not in {"auth.signup", "auth.login"}:
-        return None
-    return _json_object_error()
-
-
 def json_object_required(function: Callable) -> Callable:
     """Validate a protected JSON body after its authorization decorator."""
 
