@@ -14,11 +14,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from .errors import (
     error_response,
-    require_json_object,
     validation_error_response,
 )
 from .extensions import cors, db, jwt, migrate
-
 
 API_VERSION = "1.0.0"
 
@@ -149,14 +147,11 @@ def create_app(
     flask_app.register_api(auth_bp)
     flask_app.register_api(sports_bp)
     flask_app.register_api(teams_bp)
-    flask_app.before_request(require_json_object)
 
     if docs_enabled:
         from flask_openapi3_swagger.plugins import RegisterPlugin
 
-        swagger_blueprint = RegisterPlugin.register(
-            doc_url="/openapi.json"
-        )
+        swagger_blueprint = RegisterPlugin.register(doc_url="/openapi.json")
         flask_app.register_blueprint(swagger_blueprint)
         flask_app.add_url_rule(
             "/openapi.json",
@@ -250,9 +245,7 @@ def create_app(
     def export_openapi_command() -> None:
         """Export the generated OpenAPI contract for external API clients."""
         output_path = (
-            Path(flask_app.root_path).resolve().parent
-            / "docs"
-            / "openapi.json"
+            Path(flask_app.root_path).resolve().parent / "docs" / "openapi.json"
         )
         try:
             output_path.parent.mkdir(parents=True, exist_ok=True)
