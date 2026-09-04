@@ -182,7 +182,8 @@ def put_sport(path: SportPath, body: SportUpdateRequest):
     "/<int:sport_id>",
     summary="Delete a sport",
     description=(
-        "Deletes one Sport only when no enabled or disabled Team references it."
+        "Deletes one Sport only when no enabled or disabled Team or Player "
+        "references it."
     ),
     operation_id="sportsDelete",
     security=ACCESS_SECURITY,

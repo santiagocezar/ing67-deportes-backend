@@ -116,12 +116,35 @@ Un equipo expone `id`, `name`, el objeto `sport`, `gender_category`, `is_enabled
 - La comparación de nombres ignora espacios repetidos, mayúsculas y acentos, pero el
   nombre visible conserva las mayúsculas elegidas por el administrador.
 - Al crearse queda habilitado y `disabled_at` es `null`.
-- Deshabilitar no elimina el registro ni libera su nombre; habilitar lo recupera.
+- Deshabilitar no elimina el registro ni libera su nombre, pero elimina definitivamente
+  todas sus asociaciones actuales con jugadores. Habilitarlo no las restaura.
 - Un equipo deshabilitado no puede renombrarse hasta ser habilitado otra vez.
 - Deporte y categoría de género son inmutables y no existe eliminación física.
 
 ```text
 Sport 1 ─────── N Team
+```
+
+### Player
+
+Un jugador expone `id`, `name`, el objeto `sport`, `gender`, equipos resumidos,
+`is_enabled`, `created_at` y `disabled_at`. `normalized_name` se conserva sólo para
+búsqueda y ordenamiento internos; no se acepta ni se devuelve.
+
+- `id` es autogenerado y la única identidad: pueden existir nombres repetidos.
+- El nombre es obligatorio, admite hasta 100 caracteres luego de compactar espacios y
+  conserva las mayúsculas elegidas para mostrarlo.
+- `gender` sólo admite `male` o `female` y el deporte y género no pueden modificarse.
+- Puede estar sin equipo o en hasta tres equipos habilitados de su mismo deporte y
+  género.
+- Cada equipo admite como máximo `sport.max_players` jugadores.
+- Deshabilitar un jugador elimina definitivamente sus asociaciones; habilitarlo no las
+  restaura. No existe eliminación física.
+- El modelo no incluye DNI, nacionalidad, fotos ni datos biométricos.
+
+```text
+Sport 1 ─────── N Player
+Team N ─────── N Player (mediante team_players)
 ```
 
 ## Flujo de autenticación
@@ -249,8 +272,8 @@ Actualización:
 
 Enviar cualquiera de las dos capacidades en la actualización produce
 `immutable_field` con estado `422`. Un nombre equivalente existente responde `409`.
-Eliminar un deporte referenciado por cualquier equipo, incluso deshabilitado, responde
-`409` con `sport_in_use`.
+Eliminar un deporte referenciado por cualquier equipo o jugador, incluso deshabilitado,
+responde `409` con `sport_in_use`.
 
 ## Flujo y endpoints de equipos
 
@@ -355,7 +378,123 @@ equipo deshabilitado produce `409 team_disabled`.
 
 Los endpoints `disable` y `enable` no reciben cuerpo. Son idempotentes: repetir la misma
 acción responde `200` y conserva un estado consistente. Al deshabilitar,
-`disabled_at` recibe la fecha; al habilitar vuelve a `null`.
+`disabled_at` recibe la fecha y se eliminan definitivamente las asociaciones con
+jugadores; al habilitar vuelve a `null` sin restaurarlas.
+
+## Flujo y endpoints de jugadores
+
+Todas las operaciones requieren un access token activo con rol `administrator`.
+
+| Método y ruta | Acción | Respuesta exitosa |
+| --- | --- | --- |
+| `POST /players` | Crear un jugador y sus asociaciones | `201` |
+| `GET /players` | Listar, filtrar, ordenar y paginar | `200` |
+| `GET /players/{player_id}` | Consultar un jugador habilitado o deshabilitado | `200` |
+| `PUT /players/{player_id}` | Cambiar nombre y reemplazar todos sus equipos | `200` |
+| `PATCH /players/{player_id}/disable` | Deshabilitar sin eliminar | `200` |
+| `PATCH /players/{player_id}/enable` | Volver a habilitar | `200` |
+
+No existe `DELETE /players/{player_id}`.
+
+### Creación y asociaciones
+
+`POST /players` acepta exactamente:
+
+```json
+{
+  "name": "Lionel Messi",
+  "sport_id": 1,
+  "gender": "male",
+  "team_ids": [1]
+}
+```
+
+`team_ids` es opcional y su valor predeterminado es `[]`. No admite identificadores
+repetidos, no positivos ni más de tres elementos. Antes de escribir, el servicio valida
+el conjunto completo: el deporte y los equipos deben existir; cada equipo debe estar
+habilitado, tener el mismo deporte y género, y conservar una capacidad máxima de
+`sport.max_players`. La creación y las asociaciones se confirman una sola vez; ante un
+error no queda un jugador parcial.
+
+Las respuestas singulares devuelven directamente el jugador:
+
+```json
+{
+  "id": 1,
+  "name": "Lionel Messi",
+  "sport": {
+    "id": 1,
+    "name": "Fútbol",
+    "max_players": 22,
+    "max_players_in_game": 11
+  },
+  "gender": "male",
+  "teams": [
+    {"id": 1, "name": "Inter Miami"}
+  ],
+  "is_enabled": true,
+  "created_at": "2026-09-03T12:00:00Z",
+  "disabled_at": null
+}
+```
+
+### Consulta y listado
+
+`GET /players` acepta estos parámetros opcionales:
+
+| Parámetro | Valores | Predeterminado | Uso |
+| --- | --- | --- | --- |
+| `search` | texto | ninguno | Coincidencia parcial de nombre sin distinguir mayúsculas ni acentos |
+| `sport_id` | entero positivo | ninguno | Filtra por deporte; uno inexistente responde `404` |
+| `gender` | `male`, `female` | ninguno | Filtra por género |
+| `team_id` | entero positivo | ninguno | Filtra por equipo; uno inexistente responde `404` |
+| `status` | `enabled`, `disabled`, `all` | `enabled` | Selecciona el estado administrativo |
+| `sort` | `name_asc`, `created_at_desc` | `name_asc` | Orden estable por nombre o creación |
+| `page` | entero positivo | `1` | Página solicitada |
+
+Los filtros se combinan con `AND` y se ejecutan en PostgreSQL. Cada página contiene 25
+registros. Una página fuera de rango responde `200` con `players: []` y los totales
+reales. Los empates se ordenan de forma determinista por `id`.
+
+```json
+{
+  "players": [],
+  "pagination": {
+    "page": 1,
+    "per_page": 25,
+    "total_items": 0,
+    "total_pages": 0
+  }
+}
+```
+
+`GET /players/{player_id}` permite consultar jugadores habilitados o deshabilitados.
+Un identificador inexistente responde `404 player_not_found`.
+
+### Actualización y estado
+
+`PUT /players/{player_id}` requiere ambos campos y reemplaza el conjunto completo de
+equipos de forma atómica:
+
+```json
+{
+  "name": "Nombre actualizado",
+  "team_ids": [1, 2]
+}
+```
+
+Una lista vacía elimina todas las asociaciones. `id`, `sport_id`, `gender`, estado y
+fechas son inmutables; campos desconocidos producen `422`. Un jugador deshabilitado
+puede consultarse, pero no actualizarse ni asociarse hasta rehabilitarlo y responde
+`409 player_disabled`.
+
+Los endpoints de estado no reciben cuerpo y son idempotentes. Deshabilitar asigna
+`disabled_at` y elimina definitivamente todas las asociaciones en la misma transacción.
+Habilitar vuelve `disabled_at` a `null` y no restaura equipos anteriores.
+
+Estas asociaciones representan membresía general de equipos, no planteles de una
+competición. Esta funcionalidad no implementa competiciones, DNI, nacionalidad, fotos,
+almacenamiento de imágenes, reconocimiento facial ni datos biométricos.
 
 ## Contrato de errores
 
@@ -365,11 +504,14 @@ acción responde `200` y conserva un estado consistente. Al deshabilitar,
 | `401` | Token ausente, inválido, vencido, revocado o refresh reutilizado. |
 | `403` | El rol autenticado no tiene permiso. |
 | `404` | El recurso no existe. |
-| `409` | Identidad duplicada, equipo deshabilitado o deporte todavía referenciado. |
+| `409` | Recurso deshabilitado, asociación incompatible, equipo completo o deporte todavía referenciado. |
 | `422` | El objeto no cumple el esquema o una regla validable. |
 | `503` | Base de datos o autenticación temporalmente no disponible. |
 
 Frontend debe decidir con `error.code` y mostrar `error.message` como texto legible.
+Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not_found`,
+`team_not_found`, `player_disabled`, `team_disabled`, `team_sport_mismatch`,
+`team_gender_mismatch` y `team_capacity_reached`.
 
 ## OpenAPI y Hoppscotch
 
@@ -403,5 +545,6 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 - `3e22b5f59faa` agrega `sports` y sus restricciones.
 - `a8c4e12f6b90` separa las capacidades de deporte y agrega `teams`, estados,
   restricciones y relación con `sports`.
+- `b4e6c1d2a9f0` agrega `players`, sus estados y la asociación `team_players`.
 
 El DER de las entidades realmente implementadas se mantiene en `docs/erd.puml`.

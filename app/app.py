@@ -81,7 +81,9 @@ def create_app(
         info=Info(
             title="Sports App API",
             version=API_VERSION,
-            summary="Authentication, Sports, and Teams management API.",
+            summary=(
+                "Authentication, Sports, Teams, and Players management API."
+            ),
         ),
         security_schemes={
             "AccessTokenAuth": SecurityScheme(
@@ -125,6 +127,7 @@ def create_app(
             r"/auth(?:/.*)?": {"origins": allowed_origins},
             r"/sports(?:/.*)?": {"origins": allowed_origins},
             r"/teams(?:/.*)?": {"origins": allowed_origins},
+            r"/players(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -135,6 +138,7 @@ def create_app(
 
     from . import models as _models
     from .models import ADMIN_USER_ROLE
+    from .routes.players import players_bp
     from .routes.sports import sports_bp
     from .routes.teams import teams_bp
     from .routes.users import auth_bp
@@ -149,6 +153,7 @@ def create_app(
     flask_app.register_api(auth_bp)
     flask_app.register_api(sports_bp)
     flask_app.register_api(teams_bp)
+    flask_app.register_api(players_bp)
     flask_app.before_request(require_json_object)
 
     if docs_enabled:

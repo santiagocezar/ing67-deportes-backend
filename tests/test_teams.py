@@ -428,11 +428,20 @@ class TeamDomainTests(unittest.TestCase):
         with self.app.app_context(), patch(
             "app.services.teams.get_team",
             return_value=enabled_team,
-        ), patch.object(db.session, "commit") as commit:
+        ), patch.object(db.session, "execute") as execute, patch.object(
+            db.session,
+            "commit",
+        ) as commit:
             result = set_team_enabled(1, enabled=False)
             self.assertFalse(result.is_enabled)
             self.assertIsNotNone(result.disabled_at)
             commit.assert_called_once()
+            sql = str(
+                execute.call_args.args[0].compile(
+                    dialect=postgresql.dialect()
+                )
+            )
+            self.assertIn("DELETE FROM team_players", sql)
 
         disabled_at = enabled_team.disabled_at
         with self.app.app_context(), patch(

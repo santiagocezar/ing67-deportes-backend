@@ -7,7 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 
 from ..extensions import db
-from ..models import Sport, Team
+from ..models import Sport, Team, team_players
 from ..schemas.teams import (
     TeamCreateRequest,
     TeamListQuery,
@@ -96,12 +96,15 @@ def _duplicate_team_id(
     return db.session.execute(statement).scalar_one_or_none()
 
 
-def get_team(team_id: int) -> Team:
-    team = db.session.execute(
+def get_team(team_id: int, *, for_update: bool = False) -> Team:
+    statement = (
         db.select(Team)
         .options(joinedload(Team.sport))
         .where(Team.id == team_id)
-    ).scalar_one_or_none()
+    )
+    if for_update:
+        statement = statement.with_for_update(of=Team)
+    team = db.session.execute(statement).scalar_one_or_none()
     if team is None:
         raise TeamNotFoundError("The Team does not exist.")
     return team
@@ -187,13 +190,20 @@ def update_team_name(team_id: int, data: TeamUpdateRequest) -> Team:
 
 
 def set_team_enabled(team_id: int, *, enabled: bool) -> Team:
-    team = get_team(team_id)
-    if team.is_enabled == enabled:
-        return team
-
-    team.is_enabled = enabled
-    team.disabled_at = None if enabled else datetime.now(timezone.utc)
     try:
+        team = get_team(team_id, for_update=True)
+        if team.is_enabled == enabled:
+            db.session.rollback()
+            return team
+
+        if not enabled:
+            db.session.execute(
+                db.delete(team_players).where(
+                    team_players.c.team_id == team.id
+                )
+            )
+        team.is_enabled = enabled
+        team.disabled_at = None if enabled else datetime.now(timezone.utc)
         db.session.commit()
     except Exception:
         db.session.rollback()

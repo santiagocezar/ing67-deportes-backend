@@ -221,7 +221,8 @@ def _set_team_state(team_id: int, *, enabled: bool):
     "/<int:team_id>/disable",
     summary="Disable a Team",
     description=(
-        "Disables a Team without deleting it. Repeated requests are idempotent."
+        "Disables a Team and removes its Player memberships without deleting "
+        "it. Repeated requests are idempotent."
     ),
     operation_id="teamsDisable",
     security=ACCESS_SECURITY,
@@ -244,7 +245,8 @@ def disable_team(path: TeamPath):
     "/<int:team_id>/enable",
     summary="Enable a Team",
     description=(
-        "Enables a Team again. Repeated requests are idempotent."
+        "Enables a Team without restoring prior Player memberships. Repeated "
+        "requests are idempotent."
     ),
     operation_id="teamsEnable",
     security=ACCESS_SECURITY,

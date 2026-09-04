@@ -50,8 +50,28 @@ entity "teams" as teams {
   UQ (normalized_name, sport_id, gender_category)
 }
 
+entity "players" as players {
+  * id : INTEGER <<PK>>
+  --
+  * name : VARCHAR(100)
+  * normalized_name : VARCHAR(100)
+  * gender : VARCHAR(10) <<CHECK>>
+  * sport_id : INTEGER <<FK>>
+  * is_enabled : BOOLEAN <<CHECK>>
+  * created_at : TIMESTAMPTZ
+  disabled_at : TIMESTAMPTZ
+}
+
+entity "team_players" as team_players {
+  * team_id : INTEGER <<PK, FK>>
+  * player_id : INTEGER <<PK, FK>>
+}
+
 users ||--o{ auth_sessions : owns
 sports ||--o{ teams : classifies
+sports ||--o{ players : classifies
+teams ||--o{ team_players : has
+players ||--o{ team_players : joins
 
 note right of users
   role IN ('administrator', 'referee')
@@ -68,6 +88,22 @@ note right of teams
   enabled => disabled_at IS NULL
   disabled => disabled_at IS NOT NULL
   sport deletion is restricted
+end note
+
+note right of players
+  name is non-blank; duplicate names are allowed
+  gender IN ('male', 'female')
+  enabled => disabled_at IS NULL
+  disabled => disabled_at IS NOT NULL
+  sport deletion is restricted
+end note
+
+note right of team_players
+  composite PK (team_id, player_id)
+  max 3 Teams per Player (service rule)
+  Team count <= Sport.max_players (service rule)
+  enabled Team and matching Sport/gender (service rule)
+  soft disable removes associations explicitly
 end note
 
 @enduml

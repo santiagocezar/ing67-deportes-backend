@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
-from ..models import Sport, Team
+from ..models import Player, Sport, Team
 from ..schemas.sports import SportCreateRequest, SportUpdateRequest
 from .database import constraint_name
 
@@ -22,7 +22,7 @@ class SportNotFoundError(LookupError):
 
 
 class SportInUseError(RuntimeError):
-    """Raised when a Team still references a Sport."""
+    """Raised when a Team or Player still references a Sport."""
 
 
 SPORT_NAME_CONSTRAINTS = {
@@ -30,6 +30,7 @@ SPORT_NAME_CONSTRAINTS = {
     "uq_sports_normalized_name",
 }
 TEAM_SPORT_FOREIGN_KEY = "fk_teams_sport_id_sports"
+PLAYER_SPORT_FOREIGN_KEY = "fk_players_sport_id_sports"
 
 
 def _normalize_name(value: Any) -> tuple[str, str]:
@@ -172,24 +173,38 @@ def update_sport_name(
 
 
 def delete_sport(sport_id: int) -> None:
-    sport = get_sport(sport_id)
-    referenced_team_id = db.session.execute(
-        db.select(Team.id).where(Team.sport_id == sport_id).limit(1)
-    ).scalar_one_or_none()
-    if referenced_team_id is not None:
-        raise SportInUseError(
-            "The sport cannot be deleted while Teams reference it."
-        )
-
-    db.session.delete(sport)
-
     try:
+        sport = db.session.execute(
+            db.select(Sport)
+            .where(Sport.id == sport_id)
+            .with_for_update()
+        ).scalar_one_or_none()
+        if sport is None:
+            raise SportNotFoundError("The sport does not exist.")
+
+        referenced_team_id = db.session.execute(
+            db.select(Team.id).where(Team.sport_id == sport_id).limit(1)
+        ).scalar_one_or_none()
+        referenced_player_id = db.session.execute(
+            db.select(Player.id).where(Player.sport_id == sport_id).limit(1)
+        ).scalar_one_or_none()
+        if referenced_team_id is not None or referenced_player_id is not None:
+            raise SportInUseError(
+                "The sport cannot be deleted while Teams or Players "
+                "reference it."
+            )
+
+        db.session.delete(sport)
         db.session.commit()
     except IntegrityError as error:
         db.session.rollback()
-        if constraint_name(error) == TEAM_SPORT_FOREIGN_KEY:
+        if constraint_name(error) in {
+            TEAM_SPORT_FOREIGN_KEY,
+            PLAYER_SPORT_FOREIGN_KEY,
+        }:
             raise SportInUseError(
-                "The sport cannot be deleted while Teams reference it."
+                "The sport cannot be deleted while Teams or Players "
+                "reference it."
             ) from error
         raise
     except Exception:

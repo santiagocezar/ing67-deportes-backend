@@ -123,11 +123,25 @@ approved task.
 
 The only approved deferred-domain statements are:
 
-- A Player may be associated with multiple Teams globally.
+- A Player may be associated with up to three Teams globally.
 - Within one Competition, a Player may represent at most one participating Team.
 - Competition rosters will be consulted in Competition context.
 - A Match must not accept an empty or incomplete Team.
 - Do not create Competition-related models merely to support Team management.
+
+## Implemented player domain
+
+- A Player has a generated integer identifier and belongs to exactly one Sport.
+- Player `gender` accepts only `male` or `female`.
+- A Player may be associated with zero through three enabled Teams whose Sport and
+  gender match the Player.
+- A Team may have at most its Sport's `max_players` associated Players.
+- Players and Teams use soft disable; neither has a physical delete endpoint.
+- Disabling a Player or Team permanently removes its current Team associations in the
+  same transaction. Re-enabling it does not restore them.
+- General Team membership is not a Competition roster and must not introduce
+  Competition behavior.
+- The implemented Player model has no document, nationality, photo, or biometric data.
 
 ---
 

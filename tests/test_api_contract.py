@@ -507,6 +507,10 @@ class ApiContractTests(unittest.TestCase):
                 "/teams/{team_id}",
                 "/teams/{team_id}/disable",
                 "/teams/{team_id}/enable",
+                "/players",
+                "/players/{player_id}",
+                "/players/{player_id}/disable",
+                "/players/{player_id}/enable",
             },
         )
 
@@ -516,8 +520,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 16)
-        self.assertEqual(len(set(operation_ids)), 16)
+        self.assertEqual(len(operation_ids), 22)
+        self.assertEqual(len(set(operation_ids)), 22)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -538,6 +542,8 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("TokenResponse", contract["components"]["schemas"])
         self.assertIn("SportResponse", contract["components"]["schemas"])
         self.assertIn("TeamResponse", contract["components"]["schemas"])
+        self.assertIn("PlayerResponse", contract["components"]["schemas"])
+        self.assertIn("PlayerListResponse", contract["components"]["schemas"])
         self.assertIn("ErrorResponse", contract["components"]["schemas"])
 
         for operation in operations:
@@ -564,17 +570,9 @@ class ApiContractTests(unittest.TestCase):
 
     def test_export_is_deterministic_and_matches_committed_contract(self):
         runner = self.app.test_cli_runner()
-
-        first_result = runner.invoke(args=["export-openapi"])
-        self.assertEqual(first_result.exit_code, 0, first_result.output)
-        output_path = Path(first_result.output.strip())
-        first_export = output_path.read_text(encoding="utf-8")
-
-        second_result = runner.invoke(args=["export-openapi"])
-        self.assertEqual(second_result.exit_code, 0, second_result.output)
-        second_export = output_path.read_text(encoding="utf-8")
-
-        self.assertEqual(first_export, second_export)
+        output_path = (
+            Path(__file__).resolve().parents[1] / "docs" / "openapi.json"
+        )
         expected = (
             json.dumps(
                 self.app.api_doc,
@@ -584,6 +582,18 @@ class ApiContractTests(unittest.TestCase):
             )
             + chr(10)
         )
+        self.assertEqual(output_path.read_text(encoding="utf-8"), expected)
+
+        first_result = runner.invoke(args=["export-openapi"])
+        self.assertEqual(first_result.exit_code, 0, first_result.output)
+        self.assertEqual(Path(first_result.output.strip()), output_path)
+        first_export = output_path.read_text(encoding="utf-8")
+
+        second_result = runner.invoke(args=["export-openapi"])
+        self.assertEqual(second_result.exit_code, 0, second_result.output)
+        second_export = output_path.read_text(encoding="utf-8")
+
+        self.assertEqual(first_export, second_export)
         self.assertEqual(first_export, expected)
 
     def test_migration_and_application_cli_commands_remain_registered(self):

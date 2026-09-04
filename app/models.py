@@ -10,6 +10,30 @@ DEFAULT_USER_ROLE = "referee"
 USER_ROLES = (ADMIN_USER_ROLE, DEFAULT_USER_ROLE)
 
 
+team_players = db.Table(
+    "team_players",
+    db.Column(
+        "team_id",
+        db.Integer,
+        db.ForeignKey(
+            "teams.id",
+            name="fk_team_players_team_id_teams",
+        ),
+        primary_key=True,
+    ),
+    db.Column(
+        "player_id",
+        db.Integer,
+        db.ForeignKey(
+            "players.id",
+            name="fk_team_players_player_id_players",
+        ),
+        primary_key=True,
+    ),
+    Index("ix_team_players_player_id", "player_id"),
+)
+
+
 class Sport(db.Model):
     __tablename__ = "sports"
     __table_args__ = (
@@ -44,6 +68,11 @@ class Sport(db.Model):
 
     teams = db.relationship(
         "Team",
+        back_populates="sport",
+        passive_deletes=True,
+    )
+    players = db.relationship(
+        "Player",
         back_populates="sport",
         passive_deletes=True,
     )
@@ -112,6 +141,69 @@ class Team(db.Model):
     disabled_at = db.Column(db.DateTime(timezone=True), nullable=True)
 
     sport = db.relationship("Sport", back_populates="teams")
+    players = db.relationship(
+        "Player",
+        secondary=team_players,
+        back_populates="teams",
+        order_by="Player.id",
+    )
+
+
+class Player(db.Model):
+    __tablename__ = "players"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(trim(name)) > 0",
+            name="ck_players_name_not_blank",
+        ),
+        CheckConstraint(
+            "("
+            "is_enabled = TRUE AND disabled_at IS NULL"
+            ") OR ("
+            "is_enabled = FALSE AND disabled_at IS NOT NULL"
+            ")",
+            name="ck_players_enabled_disabled_at",
+        ),
+        CheckConstraint(
+            "gender IN ('male', 'female')",
+            name="ck_players_gender",
+        ),
+        Index("ix_players_sport_id", "sport_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    normalized_name = db.Column(db.String(100), nullable=False)
+    gender = db.Column(db.String(10), nullable=False)
+    sport_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "sports.id",
+            ondelete="RESTRICT",
+            name="fk_players_sport_id_sports",
+        ),
+        nullable=False,
+    )
+    is_enabled = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=True,
+        server_default=text("true"),
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    disabled_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    sport = db.relationship("Sport", back_populates="players")
+    teams = db.relationship(
+        "Team",
+        secondary=team_players,
+        back_populates="players",
+        order_by="Team.id",
+    )
 
 
 class User(db.Model):
