@@ -151,11 +151,7 @@ def create_app(
     flask_app.register_api(auth_bp)
     flask_app.register_api(sports_bp)
     flask_app.register_api(teams_bp)
-<<<<<<< HEAD
     flask_app.register_api(players_bp)
-    flask_app.before_request(require_json_object)
-=======
->>>>>>> 854b66b65f2eb675c5d412ac2f4656ffc3d1a8d8
 
     if docs_enabled:
         from flask_openapi3_swagger.plugins import RegisterPlugin
