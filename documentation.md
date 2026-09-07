@@ -80,7 +80,8 @@ contraseña se persiste únicamente como hash.
 - La contraseña requiere al menos ocho caracteres.
 - `birthdate` se recibe como `YYYY-MM-DD` y se guarda como `DATE`.
 - La edad debe estar entre 18 y 100 años inclusive.
-- El registro público siempre crea el rol `referee`.
+- El registro es público, siempre crea el rol `referee` y no requiere aprobación de un
+  administrador. La cuenta puede iniciar sesión inmediatamente después del alta.
 - El rol `administrator` sólo se crea mediante el comando de consola.
 
 ### AuthSession
@@ -188,6 +189,9 @@ responde `204`. Los tokens relacionados dejan de servir.
 | `POST /auth/refresh` | Refresh token | Sin cuerpo | `200`, ambos tokens nuevos |
 | `DELETE /auth/logout` | Access o refresh token | Sin cuerpo | `204` |
 | `GET /auth/me` | Access token | Sin cuerpo | `200`, usuario |
+
+`POST /auth/signup` no recibe un rol ni requiere autenticación o aprobación posterior:
+todo registro válido crea directamente una cuenta `referee` que puede iniciar sesión.
 
 Registro:
 

@@ -34,13 +34,17 @@ TEST_CONFIG = {
 }
 
 
-def _user() -> SimpleNamespace:
+def _user(
+    *,
+    role: str = "administrator",
+    email: str = "ana@example.com",
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=1,
         name="Ana Example",
         birthdate=date(1995, 4, 20),
-        role="administrator",
-        email="ana@example.com",
+        role=role,
+        email=email,
         creation_date=datetime(2026, 1, 1, tzinfo=timezone.utc),
     )
 
@@ -153,6 +157,30 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         UserEnvelope.model_validate(response.get_json())
 
+    def test_public_signup_creates_referee_without_admin_approval(self):
+        referee = _user(
+            role="referee",
+            email="referee@example.com",
+        )
+        signup_body = {
+            "name": referee.name,
+            "birthdate": referee.birthdate.isoformat(),
+            "email": referee.email,
+            "password": "password123",
+        }
+
+        with patch(
+            "app.routes.users.create_user",
+            return_value=referee,
+        ) as create_user:
+            response = self.client.post("/auth/signup", json=signup_body)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.get_json()["user"]["role"], "referee")
+        create_user.assert_called_once()
+        self.assertIsInstance(create_user.call_args.args[0], SignupRequest)
+        self.assertEqual(create_user.call_args.kwargs, {"role": "referee"})
+
     def test_all_sport_success_responses_match_public_schemas(self):
         football = _sport()
         basketball = _sport(2, "Básquet", 15, 5)
@@ -226,6 +254,21 @@ class ApiContractTests(unittest.TestCase):
                     response.get_json()["error"]["code"],
                     "invalid_request",
                 )
+
+    def test_auth_cors_preflight_does_not_require_a_json_body(self):
+        response = self.client.options(
+            "/auth/signup",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers.get("Access-Control-Allow-Origin"),
+            "http://localhost:5173",
+        )
 
     def test_schema_failures_return_structured_422_without_input_values(self):
         payload = {

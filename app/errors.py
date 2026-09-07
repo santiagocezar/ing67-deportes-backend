@@ -52,6 +52,13 @@ def validation_details(error: ValidationError) -> list[dict[str, str]]:
 
 def validation_error_response(error: ValidationError) -> Response:
     """Translate flask-openapi3/Pydantic failures into the API error envelope."""
+    if request.endpoint in {"auth.signup", "auth.login"}:
+        invalid_body = _json_object_error()
+        if invalid_body is not None:
+            response, status = invalid_body
+            response.status_code = status
+            return response
+
     details = validation_details(error)
     immutable_error = next(
         (detail for detail in details if detail["type"] == "immutable_field"),

@@ -4,6 +4,7 @@ from flask_openapi3 import APIBlueprint, Tag
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..errors import error_response
+from ..models import DEFAULT_USER_ROLE
 from ..schemas.auth import (
     LoginRequest,
     SignupRequest,
@@ -61,7 +62,10 @@ def _token_response(access_token: str, refresh_token: str):
 @auth_bp.post(
     "/signup",
     summary="Register a referee account",
-    description="Creates a public account with the referee role.",
+    description=(
+        "Creates a public account with the referee role. "
+        "No administrator approval is required."
+    ),
     operation_id="authSignup",
     responses={
         201: SignupResponse,
@@ -73,7 +77,7 @@ def _token_response(access_token: str, refresh_token: str):
 )
 def signup(body: SignupRequest):
     try:
-        user = create_user(body)
+        user = create_user(body, role=DEFAULT_USER_ROLE)
     except UserValidationError as error:
         return error_response("validation_error", str(error), 422)
     except DuplicateEmailError as error:

@@ -1038,7 +1038,7 @@
     },
     "/auth/signup": {
       "post": {
-        "description": "Creates a public account with the referee role.",
+        "description": "Creates a public account with the referee role. No administrator approval is required.",
         "operationId": "authSignup",
         "requestBody": {
           "content": {
