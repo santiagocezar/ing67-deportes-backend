@@ -67,11 +67,71 @@ entity "team_players" as team_players {
   * player_id : INTEGER <<PK, FK>>
 }
 
+entity "competitions" as competitions {
+  * id : INTEGER <<PK>>
+  --
+  * name : VARCHAR(100)
+  * normalized_name : VARCHAR(100)
+  * sport_id : INTEGER <<FK>>
+  * gender : VARCHAR(10) <<CHECK>>
+  * starts_at : TIMESTAMPTZ <<CHECK>>
+  * ends_at : TIMESTAMPTZ <<CHECK>>
+  * status : VARCHAR(20) <<CHECK>>
+  * is_enabled : BOOLEAN <<CHECK>>
+  * created_at : TIMESTAMPTZ
+  disabled_at : TIMESTAMPTZ
+}
+
+entity "competition_teams" as competition_teams {
+  * competition_id : INTEGER <<PK, FK>>
+  * team_id : INTEGER <<PK, FK>>
+}
+
+entity "competition_roster_players" as competition_roster_players {
+  * competition_id : INTEGER <<PK, FK>>
+  * team_id : INTEGER <<PK, FK>>
+  * player_id : INTEGER <<PK, FK>>
+  --
+  UQ (competition_id, player_id)
+}
+
+entity "competition_referees" as competition_referees {
+  * competition_id : INTEGER <<PK, FK>>
+  * referee_id : INTEGER <<PK, FK>>
+}
+
+entity "matches" as matches {
+  * id : INTEGER <<PK>>
+  --
+  * competition_id : INTEGER <<FK>>
+  * team_1_id : INTEGER <<FK>>
+  * team_2_id : INTEGER <<FK>>
+  * referee_id : INTEGER <<FK>>
+  * round_number : INTEGER <<CHECK>>
+  starts_at : TIMESTAMPTZ
+  ends_at : TIMESTAMPTZ
+  * status : VARCHAR(20) <<CHECK>>
+  --
+  UQ (competition_id, team_1_id, team_2_id)
+  UQ (competition_id, round_number, referee_id)
+}
+
 users ||--o{ auth_sessions : owns
 sports ||--o{ teams : classifies
 sports ||--o{ players : classifies
 teams ||--o{ team_players : has
 players ||--o{ team_players : joins
+sports ||--o{ competitions : classifies
+competitions ||--|{ competition_teams : registers
+teams ||--o{ competition_teams : participates
+competition_teams ||--|{ competition_roster_players : freezes
+players ||--o{ competition_roster_players : appears_in
+competitions ||--|{ competition_referees : assigns
+users ||--o{ competition_referees : referees
+competitions ||--o{ matches : schedules
+teams ||--o{ matches : team_1
+teams ||--o{ matches : team_2
+users ||--o{ matches : officiates
 
 note right of users
   role IN ('administrator', 'referee')
@@ -104,6 +164,34 @@ note right of team_players
   Team count <= Sport.max_players (service rule)
   enabled Team and matching Sport/gender (service rule)
   soft disable removes associations explicitly
+end note
+
+note right of competitions
+  duplicate names are allowed
+  gender IN ('male', 'female')
+  starts_at < ends_at
+  status is time-reconciled on API access
+  discarded implies soft-disabled
+  4..16 even Teams (service rule)
+end note
+
+note right of competition_roster_players
+  immutable historical roster after Match generation
+  one Team per Player in each Competition
+  roster size follows Sport limits (service rule)
+end note
+
+note right of competition_referees
+  exactly one referee per two Teams (service rule)
+  referenced User has role referee (service rule)
+end note
+
+note right of matches
+  exactly 3 rounds generated atomically
+  each Team has one Match per round
+  no repeated opponent (service rule)
+  schedule is null/incomplete or a valid interval
+  Team/referee overlaps are rejected globally
 end note
 
 @enduml

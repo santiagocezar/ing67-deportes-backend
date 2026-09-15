@@ -550,5 +550,149 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 - `a8c4e12f6b90` separa las capacidades de deporte y agrega `teams`, estados,
   restricciones y relación con `sports`.
 - `b4e6c1d2a9f0` agrega `players`, sus estados y la asociación `team_players`.
+- `c7d8e9f0a1b2` agrega competiciones, snapshots de participantes, árbitros y
+  partidos randomizados.
 
 El DER de las entidades realmente implementadas se mantiene en `docs/erd.puml`.
+
+## Flujo y endpoints de competiciones
+
+Las consultas de competiciones y partidos admiten access tokens de administradores y
+árbitros. Las altas, correcciones, cambios de estado, sorteos y programaciones son
+exclusivas del administrador.
+
+| Método y ruta | Acción | Respuesta exitosa |
+| --- | --- | --- |
+| `POST /competitions` | Crear con equipos, planteles y árbitros | `201` |
+| `GET /competitions` | Listar, filtrar, ordenar y paginar | `200` |
+| `GET /competitions/{id}` | Consultar detalle y snapshots | `200` |
+| `PUT /competitions/{id}` | Cambiar nombre e intervalo | `200` |
+| `PUT /competitions/{id}/participants` | Corregir todos los participantes | `200` |
+| `PATCH /competitions/{id}/disable` | Deshabilitar sin borrar | `200` |
+| `PATCH /competitions/{id}/enable` | Rehabilitar cuando corresponde | `200` |
+| `POST /competitions/{id}/matches/randomize` | Crear o repetir el sorteo | `200` |
+| `GET /competitions/{id}/matches` | Consultar los partidos | `200` |
+| `GET /matches/{id}` | Consultar un partido | `200` |
+| `PUT /matches/{id}` | Programar o reprogramar | `200` |
+| `GET /referees` | Buscar árbitros para el alta | `200` |
+
+### Alta y participantes
+
+La competición se crea en una única transacción. No existe inscripción progresiva:
+se envía una cantidad par de equipos entre 4 y 16, el plantel completo de cada uno y
+exactamente un árbitro cada dos equipos.
+
+```json
+{
+  "name": "Tournament 2026",
+  "sport_id": 1,
+  "gender": "male",
+  "starts_at": "2026-10-01T18:00:00-03:00",
+  "ends_at": "2026-11-30T23:00:00-03:00",
+  "teams": [
+    {
+      "team_id": 1,
+      "player_ids": [10, 11, 12, 13, 14]
+    },
+    {
+      "team_id": 2,
+      "player_ids": [20, 21, 22, 23, 24]
+    },
+    {
+      "team_id": 3,
+      "player_ids": [30, 31, 32, 33, 34]
+    },
+    {
+      "team_id": 4,
+      "player_ids": [40, 41, 42, 43, 44]
+    }
+  ],
+  "referee_ids": [100, 101]
+}
+```
+
+Equipos y jugadores deben estar habilitados al inscribirse, pertenecer al deporte y
+género de la competición y conservar su membresía general vigente. Cada plantel debe
+tener entre `sport.max_players_in_game` y `sport.max_players` integrantes. Un jugador
+no puede representar a dos equipos en la misma competición.
+
+Los árbitros son usuarios existentes con rol `referee`. `GET /referees` es una consulta
+paginada exclusiva del administrador, admite `search` y `page` y devuelve solamente
+`id`, `name` y `email`.
+
+El detalle conserva los planteles como snapshots históricos. Deshabilitar o cambiar
+posteriormente un equipo o jugador no los reescribe. Un mismo equipo puede participar
+en varias competiciones, incluso si sus intervalos se solapan.
+
+Antes del sorteo, `PUT /competitions/{id}/participants` permite reemplazar en forma
+atómica todas las inscripciones y árbitros, conservando la cantidad original de equipos.
+Después de generar cualquier partido, deporte, género, equipos, planteles, árbitros y
+cantidad quedan bloqueados.
+
+### Fechas, edición y estado
+
+Todos los datetimes requieren offset y se normalizan a UTC. `ends_at` debe ser posterior
+a `starts_at` y continuar en el futuro al crear o editar. El inicio puede estar en el
+pasado. Un rango invertido responde `422 competition_date_range_invalid` y señala
+`body.ends_at`.
+
+`PUT /competitions/{id}` requiere `name`, `starts_at` y `ends_at`; no admite otros
+campos y sólo funciona mientras la competición esté habilitada y no tenga partidos.
+Los nombres pueden repetirse y la búsqueda ignora mayúsculas y acentos.
+
+Los estados se reconcilian antes de las lecturas y escrituras relevantes:
+
+- `scheduled`: todavía no llegó el inicio.
+- `in_progress`: el momento actual está dentro del intervalo.
+- `finished`: terminó con todos los partidos requeridos programados.
+- `discarded`: fue deshabilitada o terminó con partidos faltantes/incompletos.
+
+No hay scheduler: la primera operación posterior a un límite temporal persiste el nuevo
+estado antes de responder. Al descarte automático también se establece
+`is_enabled=false`; `disabled_at` conserva la fecha de finalización.
+
+Los endpoints de disponibilidad son idempotentes. Sólo se puede deshabilitar sin
+partidos. Se puede rehabilitar una competición deshabilitada manualmente si sigue sin
+partidos y todavía no terminó. Nunca se borran físicamente competiciones o snapshots.
+
+`GET /competitions` usa páginas fijas de 25 elementos y acepta `search`, `sport_id`,
+`gender`, `lifecycle_status`, `availability`, `starts_from`, `starts_to`, `sort` y
+`page`. `availability` admite `enabled`, `disabled` y `all`; `sort` admite
+`starts_at_asc` y `starts_at_desc`. Como `availability` vale `enabled` por defecto,
+para consultar descartadas se debe enviar `disabled` o `all`.
+
+### Sorteo y partidos
+
+El único modo de crear partidos es:
+
+```http
+POST /competitions/{competition_id}/matches/randomize
+```
+
+El sorteo genera tres rondas mediante un algoritmo circular sobre un orden aleatorio.
+Cada equipo juega una vez por ronda contra tres rivales diferentes. Para `n` equipos se
+crean `3n/2` partidos. En cada ronda se distribuyen aleatoriamente los `n/2` árbitros,
+uno por partido. Todos nacen sin horario y con estado `incomplete`.
+
+El endpoint puede repetirse mientras todos los partidos continúen incompletos y
+reemplaza atómicamente enfrentamientos y árbitros. Si alguno tiene horario, responde
+`409 competition_draw_locked`. No existen alta manual ni eliminación de partidos.
+
+Programación:
+
+```json
+{
+  "starts_at": "2026-10-10T18:00:00-03:00",
+  "ends_at": "2026-10-10T20:00:00-03:00"
+}
+```
+
+El inicio debe ser futuro, el final posterior y todo el intervalo debe entrar en el de
+la competición. Un partido programado sólo puede cambiar antes de comenzar. Se rechaza
+cualquier solapamiento global del árbitro o de cualquiera de los equipos, incluso entre
+competiciones distintas; intervalos adyacentes sí son válidos.
+
+Los estados de partido son `incomplete`, `scheduled`, `in_progress` y `finished`.
+El detalle devuelve ronda, horario, estado, árbitro, ambos equipos y sus planteles
+históricos. Todavía no registra puntos, resultados, fases, tarjetas, expulsiones,
+suspensiones, imágenes ni reconocimiento facial.

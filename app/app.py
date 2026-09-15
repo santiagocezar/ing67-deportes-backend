@@ -80,7 +80,8 @@ def create_app(
             title="Sports App API",
             version=API_VERSION,
             summary=(
-                "Authentication, Sports, Teams, and Players management API."
+                "Authentication, Sports, Teams, Players, Competitions, and "
+                "Matches management API."
             ),
         ),
         security_schemes={
@@ -126,6 +127,9 @@ def create_app(
             r"/sports(?:/.*)?": {"origins": allowed_origins},
             r"/teams(?:/.*)?": {"origins": allowed_origins},
             r"/players(?:/.*)?": {"origins": allowed_origins},
+            r"/competitions(?:/.*)?": {"origins": allowed_origins},
+            r"/matches(?:/.*)?": {"origins": allowed_origins},
+            r"/referees(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -136,7 +140,10 @@ def create_app(
 
     from . import models as _models
     from .models import ADMIN_USER_ROLE
+    from .routes.competitions import competitions_bp
+    from .routes.matches import matches_bp
     from .routes.players import players_bp
+    from .routes.referees import referees_bp
     from .routes.sports import sports_bp
     from .routes.teams import teams_bp
     from .routes.users import auth_bp
@@ -152,6 +159,9 @@ def create_app(
     flask_app.register_api(sports_bp)
     flask_app.register_api(teams_bp)
     flask_app.register_api(players_bp)
+    flask_app.register_api(competitions_bp)
+    flask_app.register_api(matches_bp)
+    flask_app.register_api(referees_bp)
 
     if docs_enabled:
         from flask_openapi3_swagger.plugins import RegisterPlugin

@@ -64,7 +64,26 @@ def validation_error_response(error: ValidationError) -> Response:
         (detail for detail in details if detail["type"] == "immutable_field"),
         None,
     )
-    if immutable_error:
+    domain_error = next(
+        (
+            detail
+            for detail in details
+            if detail["type"]
+            in {
+                "competition_date_range_invalid",
+                "match_date_range_invalid",
+            }
+        ),
+        None,
+    )
+    if domain_error:
+        response, status = error_response(
+            domain_error["type"],
+            domain_error["message"],
+            422,
+            details=details,
+        )
+    elif immutable_error:
         response, status = error_response(
             "immutable_field",
             immutable_error["message"],

@@ -1,6 +1,387 @@
 {
   "components": {
     "schemas": {
+      "CompetitionCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "referee_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Referee Ids",
+            "type": "array"
+          },
+          "sport_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Sport Id",
+            "type": "integer"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/CompetitionTeamRequest"
+            },
+            "maxItems": 16,
+            "minItems": 4,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams",
+          "referee_ids",
+          "name",
+          "sport_id",
+          "gender",
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "CompetitionCreateRequest",
+        "type": "object"
+      },
+      "CompetitionDetailResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "referees": {
+            "items": {
+              "$ref": "#/components/schemas/RefereeSummaryResponse"
+            },
+            "title": "Referees",
+            "type": "array"
+          },
+          "sport": {
+            "$ref": "#/components/schemas/SportResponse"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "in_progress",
+              "finished",
+              "discarded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_count": {
+            "title": "Team Count",
+            "type": "integer"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/CompetitionTeamResponse"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sport",
+          "gender",
+          "team_count",
+          "starts_at",
+          "ends_at",
+          "status",
+          "is_enabled",
+          "created_at",
+          "disabled_at",
+          "teams",
+          "referees"
+        ],
+        "title": "CompetitionDetailResponse",
+        "type": "object"
+      },
+      "CompetitionListResponse": {
+        "properties": {
+          "competitions": {
+            "items": {
+              "$ref": "#/components/schemas/CompetitionSummaryResponse"
+            },
+            "title": "Competitions",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/CompetitionPaginationResponse"
+          }
+        },
+        "required": [
+          "competitions",
+          "pagination"
+        ],
+        "title": "CompetitionListResponse",
+        "type": "object"
+      },
+      "CompetitionPaginationResponse": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "CompetitionPaginationResponse",
+        "type": "object"
+      },
+      "CompetitionSummaryResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "sport": {
+            "$ref": "#/components/schemas/SportResponse"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "scheduled",
+              "in_progress",
+              "finished",
+              "discarded"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_count": {
+            "title": "Team Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sport",
+          "gender",
+          "team_count",
+          "starts_at",
+          "ends_at",
+          "status",
+          "is_enabled",
+          "created_at",
+          "disabled_at"
+        ],
+        "title": "CompetitionSummaryResponse",
+        "type": "object"
+      },
+      "CompetitionTeamRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "player_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "minItems": 1,
+            "title": "Player Ids",
+            "type": "array"
+          },
+          "team_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Team Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "team_id",
+          "player_ids"
+        ],
+        "title": "CompetitionTeamRequest",
+        "type": "object"
+      },
+      "CompetitionTeamResponse": {
+        "properties": {
+          "gender_category": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender Category",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "roster": {
+            "items": {
+              "$ref": "#/components/schemas/RosterPlayerResponse"
+            },
+            "title": "Roster",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "gender_category",
+          "is_enabled",
+          "roster"
+        ],
+        "title": "CompetitionTeamResponse",
+        "type": "object"
+      },
+      "CompetitionUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "CompetitionUpdateRequest",
+        "type": "object"
+      },
       "ErrorBody": {
         "properties": {
           "code": {
@@ -66,6 +447,132 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "MatchCompetitionResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MatchCompetitionResponse",
+        "type": "object"
+      },
+      "MatchListResponse": {
+        "properties": {
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/MatchResponse"
+            },
+            "title": "Matches",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matches"
+        ],
+        "title": "MatchListResponse",
+        "type": "object"
+      },
+      "MatchResponse": {
+        "properties": {
+          "competition": {
+            "$ref": "#/components/schemas/MatchCompetitionResponse"
+          },
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "referee": {
+            "$ref": "#/components/schemas/RefereeSummaryResponse"
+          },
+          "round_number": {
+            "title": "Round Number",
+            "type": "integer"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "enum": [
+              "incomplete",
+              "scheduled",
+              "in_progress",
+              "finished"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team_1": {
+            "$ref": "#/components/schemas/CompetitionTeamResponse"
+          },
+          "team_2": {
+            "$ref": "#/components/schemas/CompetitionTeamResponse"
+          }
+        },
+        "required": [
+          "id",
+          "competition",
+          "round_number",
+          "starts_at",
+          "ends_at",
+          "status",
+          "referee",
+          "team_1",
+          "team_2"
+        ],
+        "title": "MatchResponse",
+        "type": "object"
+      },
+      "MatchUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "MatchUpdateRequest",
+        "type": "object"
+      },
       "PaginationResponse": {
         "properties": {
           "page": {
@@ -92,6 +599,34 @@
           "total_pages"
         ],
         "title": "PaginationResponse",
+        "type": "object"
+      },
+      "ParticipantsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "referee_ids": {
+            "items": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Referee Ids",
+            "type": "array"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/CompetitionTeamRequest"
+            },
+            "maxItems": 16,
+            "minItems": 4,
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "teams",
+          "referee_ids"
+        ],
+        "title": "ParticipantsRequest",
         "type": "object"
       },
       "PlayerCreateRequest": {
@@ -286,6 +821,127 @@
           "team_ids"
         ],
         "title": "PlayerUpdateRequest",
+        "type": "object"
+      },
+      "RefereeListResponse": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/RefereePaginationResponse"
+          },
+          "referees": {
+            "items": {
+              "$ref": "#/components/schemas/RefereeLookupResponse"
+            },
+            "title": "Referees",
+            "type": "array"
+          }
+        },
+        "required": [
+          "referees",
+          "pagination"
+        ],
+        "title": "RefereeListResponse",
+        "type": "object"
+      },
+      "RefereeLookupResponse": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "RefereeLookupResponse",
+        "type": "object"
+      },
+      "RefereePaginationResponse": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "RefereePaginationResponse",
+        "type": "object"
+      },
+      "RefereeSummaryResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "RefereeSummaryResponse",
+        "type": "object"
+      },
+      "RosterPlayerResponse": {
+        "properties": {
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "gender",
+          "is_enabled"
+        ],
+        "title": "RosterPlayerResponse",
         "type": "object"
       },
       "SignupRequest": {
@@ -781,7 +1437,7 @@
     }
   },
   "info": {
-    "summary": "Authentication, Sports, Teams, and Players management API.",
+    "summary": "Authentication, Sports, Teams, Players, Competitions, and Matches management API.",
     "title": "Sports App API",
     "version": "1.0.0"
   },
@@ -1105,6 +1761,1242 @@
         "summary": "Register a referee account",
         "tags": [
           "Authentication"
+        ]
+      }
+    },
+    "/competitions": {
+      "get": {
+        "operationId": "competitionsList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sport_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "exclusiveMinimum": 0.0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Sport Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "gender",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "male",
+                    "female"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Gender"
+            }
+          },
+          {
+            "in": "query",
+            "name": "lifecycle_status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "scheduled",
+                    "in_progress",
+                    "finished",
+                    "discarded"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Lifecycle Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "availability",
+            "required": false,
+            "schema": {
+              "default": "enabled",
+              "enum": [
+                "enabled",
+                "disabled",
+                "all"
+              ],
+              "title": "Availability",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "starts_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Starts From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "starts_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Starts To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "starts_at_desc",
+              "enum": [
+                "starts_at_asc",
+                "starts_at_desc"
+              ],
+              "title": "Sort",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List Competitions",
+        "tags": [
+          "Competitions"
+        ]
+      },
+      "post": {
+        "operationId": "competitionsCreate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompetitionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Create a Competition",
+        "tags": [
+          "Competitions"
+        ]
+      }
+    },
+    "/competitions/{competition_id}": {
+      "get": {
+        "operationId": "competitionsGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a Competition",
+        "tags": [
+          "Competitions"
+        ]
+      },
+      "put": {
+        "operationId": "competitionsUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompetitionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Update a Competition",
+        "tags": [
+          "Competitions"
+        ]
+      }
+    },
+    "/competitions/{competition_id}/disable": {
+      "patch": {
+        "operationId": "competitionsDisable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Disable a Competition",
+        "tags": [
+          "Competitions"
+        ]
+      }
+    },
+    "/competitions/{competition_id}/enable": {
+      "patch": {
+        "operationId": "competitionsEnable",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Enable a Competition",
+        "tags": [
+          "Competitions"
+        ]
+      }
+    },
+    "/competitions/{competition_id}/matches": {
+      "get": {
+        "operationId": "matchesList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List Competition Matches",
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/competitions/{competition_id}/matches/randomize": {
+      "post": {
+        "operationId": "matchesRandomize",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Generate or replace a random Match draw",
+        "tags": [
+          "Matches"
+        ]
+      }
+    },
+    "/competitions/{competition_id}/participants": {
+      "put": {
+        "operationId": "competitionsReplaceParticipants",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "competition_id",
+            "required": true,
+            "schema": {
+              "title": "Competition Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ParticipantsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompetitionDetailResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Correct Competition participants",
+        "tags": [
+          "Competitions"
+        ]
+      }
+    },
+    "/matches/{match_id}": {
+      "get": {
+        "operationId": "matchesGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "title": "Match Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a Match",
+        "tags": [
+          "Matches"
+        ]
+      },
+      "put": {
+        "operationId": "matchesUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "title": "Match Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Schedule or reschedule a Match",
+        "tags": [
+          "Matches"
         ]
       }
     },
@@ -1789,6 +3681,102 @@
         "summary": "Enable a Player",
         "tags": [
           "Players"
+        ]
+      }
+    },
+    "/referees": {
+      "get": {
+        "operationId": "refereesList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefereeListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List referees",
+        "tags": [
+          "Referees"
         ]
       }
     },
@@ -2926,6 +4914,18 @@
     {
       "description": "Administrator-only Player management.",
       "name": "Players"
+    },
+    {
+      "description": "Competition registration and lifecycle management.",
+      "name": "Competitions"
+    },
+    {
+      "description": "Random Competition draws and Match scheduling.",
+      "name": "Matches"
+    },
+    {
+      "description": "Administrator-only referee lookup.",
+      "name": "Referees"
     }
   ]
 }

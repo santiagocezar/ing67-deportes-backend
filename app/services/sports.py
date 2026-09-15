@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy.exc import IntegrityError
 
 from ..extensions import db
-from ..models import Player, Sport, Team
+from ..models import Competition, Player, Sport, Team
 from ..schemas.sports import SportCreateRequest, SportUpdateRequest
 from .database import constraint_name
 
@@ -22,7 +22,7 @@ class SportNotFoundError(LookupError):
 
 
 class SportInUseError(RuntimeError):
-    """Raised when a Team or Player still references a Sport."""
+    """Raised when an implemented domain entity references a Sport."""
 
 
 SPORT_NAME_CONSTRAINTS = {
@@ -31,6 +31,7 @@ SPORT_NAME_CONSTRAINTS = {
 }
 TEAM_SPORT_FOREIGN_KEY = "fk_teams_sport_id_sports"
 PLAYER_SPORT_FOREIGN_KEY = "fk_players_sport_id_sports"
+COMPETITION_SPORT_FOREIGN_KEY = "fk_competitions_sport_id_sports"
 
 
 def _normalize_name(value: Any) -> tuple[str, str]:
@@ -188,10 +189,22 @@ def delete_sport(sport_id: int) -> None:
         referenced_player_id = db.session.execute(
             db.select(Player.id).where(Player.sport_id == sport_id).limit(1)
         ).scalar_one_or_none()
-        if referenced_team_id is not None or referenced_player_id is not None:
+        referenced_competition_id = db.session.execute(
+            db.select(Competition.id)
+            .where(Competition.sport_id == sport_id)
+            .limit(1)
+        ).scalar_one_or_none()
+        if any(
+            reference is not None
+            for reference in (
+                referenced_team_id,
+                referenced_player_id,
+                referenced_competition_id,
+            )
+        ):
             raise SportInUseError(
-                "The sport cannot be deleted while Teams or Players "
-                "reference it."
+                "The sport cannot be deleted while Teams, Players, or "
+                "Competitions reference it."
             )
 
         db.session.delete(sport)
@@ -201,10 +214,11 @@ def delete_sport(sport_id: int) -> None:
         if constraint_name(error) in {
             TEAM_SPORT_FOREIGN_KEY,
             PLAYER_SPORT_FOREIGN_KEY,
+            COMPETITION_SPORT_FOREIGN_KEY,
         }:
             raise SportInUseError(
-                "The sport cannot be deleted while Teams or Players "
-                "reference it."
+                "The sport cannot be deleted while Teams, Players, or "
+                "Competitions reference it."
             ) from error
         raise
     except Exception:

@@ -787,11 +787,18 @@ class PlayerDomainTests(unittest.TestCase):
         team_result.scalar_one_or_none.return_value = None
         player_result = MagicMock()
         player_result.scalar_one_or_none.return_value = 1
+        competition_result = MagicMock()
+        competition_result.scalar_one_or_none.return_value = None
 
         with self.app.app_context(), patch.object(
             db.session,
             "execute",
-            side_effect=[sport_result, team_result, player_result],
+            side_effect=[
+                sport_result,
+                team_result,
+                player_result,
+                competition_result,
+            ],
         ), patch.object(db.session, "rollback") as rollback:
             with self.assertRaises(SportInUseError):
                 delete_sport(1)
