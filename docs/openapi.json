@@ -717,6 +717,71 @@
         "title": "PlayerPaginationResponse",
         "type": "object"
       },
+      "PlayerPhotoListResponse": {
+        "properties": {
+          "photos": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerPhotoResponse"
+            },
+            "title": "Photos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "photos"
+        ],
+        "title": "PlayerPhotoListResponse",
+        "type": "object"
+      },
+      "PlayerPhotoResponse": {
+        "properties": {
+          "content_type": {
+            "enum": [
+              "image/jpeg",
+              "image/png"
+            ],
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "player_id": {
+            "title": "Player Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "player_id",
+          "content_type",
+          "created_at"
+        ],
+        "title": "PlayerPhotoResponse",
+        "type": "object"
+      },
+      "PlayerPhotoUploadForm": {
+        "additionalProperties": false,
+        "properties": {
+          "photo": {
+            "description": "PNG or JPG image of at most 5 MB.",
+            "format": "binary",
+            "title": "Photo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "photo"
+        ],
+        "title": "PlayerPhotoUploadForm",
+        "type": "object"
+      },
       "PlayerResponse": {
         "properties": {
           "created_at": {
@@ -3679,6 +3744,338 @@
           }
         ],
         "summary": "Enable a Player",
+        "tags": [
+          "Players"
+        ]
+      }
+    },
+    "/players/{player_id}/photos": {
+      "get": {
+        "description": "Returns the base photos of an enabled or disabled Player in upload order. Each image is downloaded from its own endpoint.",
+        "operationId": "playerPhotosList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerPhotoListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List Player photos",
+        "tags": [
+          "Players"
+        ]
+      },
+      "post": {
+        "description": "Stores one PNG or JPG image of at most 5 MB as a base photo for the Player's facial recognition. Rejected files are never persisted.",
+        "operationId": "playerPhotosUpload",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerPhotoUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerPhotoResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Upload a Player photo",
+        "tags": [
+          "Players"
+        ]
+      }
+    },
+    "/players/{player_id}/photos/{photo_id}": {
+      "get": {
+        "description": "Returns the stored image with its PNG or JPG media type. The response is marked as non-storable because it is biometric data.",
+        "operationId": "playerPhotosGetImage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "photo_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Photo Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The stored PNG or JPG image."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a Player photo image",
         "tags": [
           "Players"
         ]

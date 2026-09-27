@@ -238,6 +238,46 @@ class Player(db.Model):
         back_populates="player",
         passive_deletes=True,
     )
+    photos = db.relationship(
+        "PlayerPhoto",
+        back_populates="player",
+        passive_deletes=True,
+        order_by="PlayerPhoto.id",
+    )
+
+
+class PlayerPhoto(db.Model):
+    """Reference to a base photo file stored outside PostgreSQL."""
+
+    __tablename__ = "player_photos"
+    __table_args__ = (
+        CheckConstraint(
+            "content_type IN ('image/jpeg', 'image/png')",
+            name="ck_player_photos_content_type",
+        ),
+        UniqueConstraint("file_name", name="uq_player_photos_file_name"),
+        Index("ix_player_photos_player_id", "player_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "players.id",
+            ondelete="RESTRICT",
+            name="fk_player_photos_player_id_players",
+        ),
+        nullable=False,
+    )
+    file_name = db.Column(db.String(64), nullable=False)
+    content_type = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    player = db.relationship("Player", back_populates="photos")
 
 
 class User(db.Model):

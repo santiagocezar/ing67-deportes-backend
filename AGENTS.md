@@ -141,7 +141,11 @@ The only approved deferred-domain statements are:
   same transaction. Re-enabling it does not restore them.
 - General Team membership is not a Competition roster and must not introduce
   Competition behavior.
-- The implemented Player model has no document, nationality, photo, or biometric data.
+- The implemented Player model has no document, nationality, or facial embedding data.
+- Player base photos are PNG/JPG files of at most 5 MB, accepted only for enabled
+  Players. Files live on local disk (`PLAYER_PHOTOS_DIR`) under generated UUID names;
+  `player_photos` stores only their reference and metadata. Photo count per Player,
+  deletion, retention, and face processing remain undefined.
 
 ---
 

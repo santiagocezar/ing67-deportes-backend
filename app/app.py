@@ -113,6 +113,8 @@ def create_app(
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
         JWT_TOKEN_LOCATION=["headers"],
         API_DOCS_ENABLED=docs_enabled,
+        PLAYER_PHOTOS_DIR=os.getenv("PLAYER_PHOTOS_DIR")
+        or str(Path(flask_app.instance_path) / "player_photos"),
     )
     flask_app.config.update(overrides)
 
@@ -142,6 +144,7 @@ def create_app(
     from .models import ADMIN_USER_ROLE
     from .routes.competitions import competitions_bp
     from .routes.matches import matches_bp
+    from .routes.player_photos import player_photos_bp
     from .routes.players import players_bp
     from .routes.referees import referees_bp
     from .routes.sports import sports_bp
@@ -159,6 +162,7 @@ def create_app(
     flask_app.register_api(sports_bp)
     flask_app.register_api(teams_bp)
     flask_app.register_api(players_bp)
+    flask_app.register_api(player_photos_bp)
     flask_app.register_api(competitions_bp)
     flask_app.register_api(matches_bp)
     flask_app.register_api(referees_bp)

@@ -579,6 +579,8 @@ class PlayerApiTests(unittest.TestCase):
                 "/players/{player_id}",
                 "/players/{player_id}/disable",
                 "/players/{player_id}/enable",
+                "/players/{player_id}/photos",
+                "/players/{player_id}/photos/{photo_id}",
             },
         )
         for path_item in player_paths.values():

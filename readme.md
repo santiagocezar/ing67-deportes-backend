@@ -39,6 +39,12 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 `app/.env` es local y nunca debe agregarse a Git. En producción se debe configurar
 `API_DOCS_ENABLED=false` para no publicar OpenAPI ni Swagger UI.
 
+Las fotos de jugadores se guardan como archivos en `instance/player_photos`, dentro del
+backend y fuera de Git. Para usar otra carpeta, definir `PLAYER_PHOTOS_DIR` en
+`app/.env` con una ruta absoluta. Esas fotos son datos biométricos: no deben
+versionarse ni compartirse, y deben respaldarse junto con la base porque PostgreSQL
+sólo guarda su referencia.
+
 ## Preparación de la base de datos
 
 Para una base nueva y vacía:

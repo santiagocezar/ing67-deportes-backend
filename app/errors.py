@@ -130,3 +130,19 @@ def json_object_required(function: Callable) -> Callable:
         return function(*args, **kwargs)
 
     return wrapper
+
+
+def multipart_form_required(function: Callable) -> Callable:
+    """Validate a protected multipart body after its authorization decorator."""
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        if request.mimetype != "multipart/form-data":
+            return error_response(
+                "invalid_request",
+                "A multipart/form-data request body is required.",
+                400,
+            )
+        return function(*args, **kwargs)
+
+    return wrapper
