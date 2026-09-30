@@ -67,6 +67,15 @@ entity "team_players" as team_players {
   * player_id : INTEGER <<PK, FK>>
 }
 
+entity "player_photos" as player_photos {
+  * id : INTEGER <<PK>>
+  --
+  * player_id : INTEGER <<FK>>
+  * file_name : VARCHAR(64) <<UQ>>
+  * content_type : VARCHAR(20) <<CHECK>>
+  * created_at : TIMESTAMPTZ
+}
+
 entity "competitions" as competitions {
   * id : INTEGER <<PK>>
   --
@@ -121,6 +130,7 @@ sports ||--o{ teams : classifies
 sports ||--o{ players : classifies
 teams ||--o{ team_players : has
 players ||--o{ team_players : joins
+players ||--o{ player_photos : has
 sports ||--o{ competitions : classifies
 competitions ||--|{ competition_teams : registers
 teams ||--o{ competition_teams : participates
@@ -164,6 +174,14 @@ note right of team_players
   Team count <= Sport.max_players (service rule)
   enabled Team and matching Sport/gender (service rule)
   soft disable removes associations explicitly
+end note
+
+note right of player_photos
+  image file lives in PLAYER_PHOTOS_DIR, not in PostgreSQL
+  file_name is a generated UUID plus .png or .jpg
+  content_type IN ('image/jpeg', 'image/png')
+  PNG/JPG, max 5 MB, enabled Player (service rule)
+  player deletion is restricted
 end note
 
 note right of competitions

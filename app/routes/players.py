@@ -236,6 +236,15 @@ def _set_player_state(player_id: int, *, enabled: bool):
     except SQLAlchemyError:
         operation = "enable" if enabled else "disable"
         return _database_unavailable(operation)
+    except OSError:
+        current_app.logger.error(
+            "Could not complete Player photo cleanup during state change"
+        )
+        return error_response(
+            "photo_storage_unavailable",
+            "The photo storage is temporarily unavailable.",
+            503,
+        )
 
     payload = _player_response(player)
     return jsonify(payload.model_dump(mode="json")), 200
@@ -245,8 +254,8 @@ def _set_player_state(player_id: int, *, enabled: bool):
     "/<int:player_id>/disable",
     summary="Disable a Player",
     description=(
-        "Disables a Player and permanently removes all Team memberships. "
-        "Repeated requests are idempotent."
+        "Disables a Player and permanently removes all Team memberships and "
+        "reference photos. Repeated requests are idempotent."
     ),
     operation_id="playersDisable",
     security=ACCESS_SECURITY,

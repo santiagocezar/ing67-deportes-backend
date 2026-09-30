@@ -11,15 +11,30 @@
 Crear y activar un entorno virtual:
 
 ```powershell
-python -m venv flask-env
-.\flask-env\Scripts\Activate.ps1
+$backendEnv = "E:\INGENIERIA EN SISTEMAS\PROJECTS\ing67-deportes-backend-env"
+python -m venv $backendEnv
+& "$backendEnv\Scripts\Activate.ps1"
 ```
+
+En Windows, mantener el entorno fuera de rutas con caracteres no ASCII. La ubicación
+anterior es el entorno local aprobado para este proyecto; en otro equipo debe elegirse
+una ruta ASCII equivalente fuera del repositorio.
 
 Instalar las dependencias:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
+
+La validación de fotos usa `face_recognition`, que depende de `dlib`. En Windows,
+`face_recognition` no ofrece soporte oficial y la distribución oficial actual de
+`dlib` puede requerir CMake y Visual Studio con las herramientas de C++ para compilarse.
+No sustituir `dlib` por wheels de terceros sin una aprobación explícita del equipo.
+`setuptools` se mantiene por debajo de la versión 81 porque `face_recognition_models`
+todavía carga sus modelos mediante la API heredada `pkg_resources`. En Windows, crear
+el entorno virtual en una ruta que sólo contenga caracteres ASCII: la carga nativa de
+los archivos de modelo de `dlib` puede fallar si `site-packages` contiene caracteres
+como `Ñ`.
 
 Copiar `app/.env.example` como `app/.env` y completar la configuración:
 
@@ -38,6 +53,29 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 `app/.env` es local y nunca debe agregarse a Git. En producción se debe configurar
 `API_DOCS_ENABLED=false` para no publicar OpenAPI ni Swagger UI.
+
+Las fotos de jugadores se guardan como archivos en `instance/player_photos`, dentro del
+backend y fuera de Git. Para usar otra carpeta, definir `PLAYER_PHOTOS_DIR` en
+`app/.env` con una ruta absoluta. Esas fotos son datos biométricos: no deben
+versionarse ni compartirse, y deben respaldarse junto con la base porque PostgreSQL
+sólo guarda su referencia.
+
+El almacenamiento local está aprobado únicamente para una instancia persistente del
+backend; no funciona correctamente con réplicas que no compartan el mismo filesystem ni
+con discos efímeros. Cada jugador habilitado conserva como máximo tres fotos y al
+deshabilitarlo se eliminan de forma permanente.
+
+Si el proceso se interrumpe durante una escritura o eliminación, detener todas las
+instancias del backend y ejecutar:
+
+```powershell
+python -m flask --app app reconcile-player-photos
+```
+
+El comando es idempotente: promueve archivos `.pending` con fila confirmada, restaura
+`.deleting` cuya fila todavía existe, elimina estados y archivos huérfanos e informa
+filas sin archivo. Debe ejecutarse con el mismo `PLAYER_PHOTOS_DIR` y la misma base que
+la aplicación.
 
 ## Preparación de la base de datos
 
@@ -129,6 +167,19 @@ El archivo se actualiza junto con cada cambio de modelos o relaciones implementa
 ```powershell
 python -m unittest discover -s tests -v
 ```
+
+Las pruebas de integración de fotos requieren una base PostgreSQL desechable y no se
+ejecutan contra la base de desarrollo por defecto. Configurar una URL exclusiva de
+pruebas y ejecutar:
+
+```powershell
+$env:PLAYER_PHOTO_TEST_DATABASE_URL = "postgresql://USER:PASSWORD@HOST:PORT/DISPOSABLE_TEST_DATABASE"
+python -m unittest discover -s tests -p "test_player_photos_postgresql.py" -v
+Remove-Item Env:PLAYER_PHOTO_TEST_DATABASE_URL
+```
+
+La suite crea y elimina un esquema aleatorio dentro de esa base. No usar una base
+compartida ni de producción.
 
 ## Documentación funcional
 

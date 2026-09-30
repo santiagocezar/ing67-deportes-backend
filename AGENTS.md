@@ -159,7 +159,30 @@ Do not add placeholder persistence for them.
   same transaction. Re-enabling it does not restore them.
 - General Team membership is not a Competition roster and must not introduce
   Competition behavior.
-- The implemented Player model has no document, nationality, photo, or biometric data.
+- The implemented Player model has no document, nationality, or facial embedding data.
+- An enabled Player may have zero through three base photos. Automatic recognition
+  requires at least one; zero photos leaves the Player for manual resolution. The
+  maximum must remain correct under concurrent uploads.
+- Player base photos are PNG/JPG files of at most 5 MiB (5,242,880 bytes), between
+  320x320 and 4096x4096 pixels, and at most 12,000,000 total pixels. Each accepted
+  photo must contain exactly one visible face whose detected box is at least 160x160
+  pixels.
+- Upload-only face validation uses `face_recognition.face_locations` with the HOG
+  model and the library's other documented defaults. It detects faces only: it must
+  not create embeddings, compare identities, or introduce a recognition threshold.
+- Base-photo files live on the local disk of the single backend machine in
+  `PLAYER_PHOTOS_DIR`, under generated UUID names. PostgreSQL stores only their
+  references and metadata. Multi-instance and ephemeral-filesystem deployments are
+  outside the approved design until a shared storage strategy is approved.
+- An administrator may permanently delete a Player photo. A base photo is retained
+  until an administrator deletes it or the Player is disabled; there is no other
+  automatic expiration.
+- Disabling a Player permanently removes all current photo rows and files in addition
+  to Team associations. Re-enabling the Player restores neither. Competition roster
+  snapshots do not retain copies of base photos, so a disabled Player cannot be
+  automatically recognized from those deleted references in a later scan.
+- Photo downloads must not expose the internal UUID file name, an ETag derived from
+  the stored file, or filesystem timestamps.
 
 ---
 
@@ -171,6 +194,9 @@ Libraries currently approved:
 - `numpy`
 
 Do not change or add recognition libraries without approval.
+Approval of a library or model does not authorize silently installing a dependency:
+check compatibility, explain the required package and transitive dependencies, and ask
+before changing dependency files or installing it.
 
 Expected conceptual flow:
 
@@ -194,8 +220,7 @@ Do not assume:
 - embedding dimensionality;
 - distance/similarity metric;
 - comparison threshold;
-- number of reference images per player;
-- retention period;
+- facial-embedding or recognition-result retention;
 - storage format in PostgreSQL;
 - synchronous vs asynchronous processing.
 
@@ -410,6 +435,8 @@ Prioritize tests for:
 - authentication, refresh rotation, reuse detection, and logout;
 - role-based authorization;
 - database conflicts and transaction rollback;
+- Player-photo limits under concurrent uploads, filesystem cleanup, and real
+  PostgreSQL migration, foreign-key, lock, and rollback behavior;
 - OpenAPI security, operation coverage, and generated-contract drift;
 - failed transactions.
 
@@ -538,10 +565,9 @@ Stop and ask if a task requires an undefined decision about:
 - embedding dimensions;
 - similarity metric;
 - embedding PostgreSQL type;
-- biometric retention;
+- facial-embedding or recognition-result retention;
 - authentication/authorization behavior;
-- image-storage strategy;
-- deployment/infrastructure;
+- changes to the approved local image-storage strategy or deployment model;
 - new dependencies or technologies.
 
 A precise question is cheaper than a wrong implementation.
