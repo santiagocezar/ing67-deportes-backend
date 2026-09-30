@@ -163,6 +163,10 @@ conserva sólo para ubicar el archivo; no se acepta ni se devuelve.
 - `file_name` es único y lo genera el backend (UUID más `.png` o `.jpg`). El nombre
   original del archivo subido no se usa ni se guarda.
 - `content_type` sólo admite `image/png` o `image/jpeg`.
+- Cada jugador habilitado puede conservar entre cero y tres fotos. El administrador
+  puede eliminar cualquiera, incluso la última.
+- Deshabilitar un jugador elimina definitivamente sus filas y archivos de fotos junto
+  con sus asociaciones actuales a equipos. Habilitarlo no restaura ninguno.
 - La referencia al jugador usa `RESTRICT`: un jugador con fotos no puede eliminarse
   físicamente.
 
@@ -515,13 +519,14 @@ puede consultarse, pero no actualizarse ni asociarse hasta rehabilitarlo y respo
 `409 player_disabled`.
 
 Los endpoints de estado no reciben cuerpo y son idempotentes. Deshabilitar asigna
-`disabled_at` y elimina definitivamente todas las asociaciones en la misma transacción.
-Habilitar vuelve `disabled_at` a `null` y no restaura equipos anteriores.
+`disabled_at` y elimina definitivamente todas las asociaciones y fotos base en la
+misma transacción. Habilitar vuelve `disabled_at` a `null` y no restaura equipos ni
+fotos anteriores.
 
 Estas asociaciones representan membresía general de equipos, no planteles de una
-competición. Esta funcionalidad no implementa competiciones, DNI, nacionalidad,
-reconocimiento facial ni embeddings. Las fotos se gestionan con los endpoints de la
-sección siguiente.
+competición. Esta funcionalidad no implementa DNI, nacionalidad, comparación de
+identidades ni embeddings. La detección de un rostro durante la carga sólo valida la
+calidad mínima de las fotos base.
 
 ## Flujo y endpoints de fotos de jugadores
 
@@ -532,12 +537,14 @@ Todas las operaciones requieren un access token activo con rol `administrator`.
 | `POST /players/{player_id}/photos` | Subir una foto base | `201` |
 | `GET /players/{player_id}/photos` | Listar la galería del jugador | `200` |
 | `GET /players/{player_id}/photos/{photo_id}` | Descargar la imagen | `200` binario |
+| `DELETE /players/{player_id}/photos/{photo_id}` | Eliminar una foto | `204` |
 
 ### Carga
 
 `POST /players/{player_id}/photos` recibe `multipart/form-data` con un único campo de
-archivo llamado `photo`. Cada solicitud sube una foto: para cargar varias, el frontend
-envía una solicitud por archivo y cada una se acepta o rechaza por separado.
+archivo llamado `photo`. No se aceptan campos desconocidos ni partes `photo` repetidas.
+Cada solicitud sube una foto: para cargar varias, el frontend envía una solicitud por
+archivo y cada una se acepta o rechaza por separado.
 
 El archivo se valida en este orden:
 
@@ -546,15 +553,24 @@ El archivo se valida en este orden:
 2. No puede estar vacío ni superar 5 MB (5.242.880 bytes; el límite es inclusivo).
 3. El contenido debe ser realmente PNG o JPEG según su firma: un PDF o SVG renombrado
    también se rechaza.
-4. OpenCV debe poder decodificar la imagen; un archivo dañado o truncado se rechaza.
+4. Ancho y alto deben estar entre 320 y 4.096 píxeles inclusive y la imagen no puede
+   superar 12.000.000 píxeles totales. Los encabezados se inspeccionan antes de la
+   decodificación completa para limitar memoria.
+5. Pillow debe poder decodificar completamente la imagen; un archivo dañado o truncado
+   se rechaza.
+6. `face_recognition.face_locations` con el detector HOG y sus valores predeterminados
+   debe encontrar exactamente un rostro, cuyo rectángulo mida al menos 160×160 píxeles.
+   Esta validación no genera embeddings ni compara identidades.
 
 El formato guardado sale del contenido, no del nombre: un PNG llamado `foto.jpg` se
-acepta y se guarda como PNG. Además, el jugador debe existir y estar habilitado.
+acepta y se guarda como PNG. Además, el jugador debe existir, estar habilitado y tener
+menos de tres fotos.
 
-Un archivo rechazado nunca llega al disco ni a la base. Si la validación pasa, el
-archivo se escribe en `PLAYER_PHOTOS_DIR` y luego se confirma su fila en
-`player_photos`; si falla cualquiera de los dos pasos, no queda ni la fila ni el
-archivo.
+Después de validar, el backend escribe un archivo UUID con sufijo `.pending`, bloquea
+la fila del jugador con `FOR UPDATE`, vuelve a contar sus fotos, crea la fila y confirma
+la transacción. Sólo entonces renombra atómicamente el archivo a `.png` o `.jpg`. Ante
+un rollback se elimina el temporal; si el proceso cae entre estados, el comando de
+reconciliación documentado en el README permite reparar el resultado.
 
 La respuesta `201` devuelve directamente la foto creada:
 
@@ -575,10 +591,15 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 | `400` | `invalid_request` | El cuerpo no es `multipart/form-data`. |
 | `404` | `player_not_found` | El jugador no existe. |
 | `409` | `player_disabled` | El jugador está deshabilitado. |
+| `409` | `player_photo_limit_reached` | El jugador ya tiene tres fotos. |
 | `413` | `photo_too_large` | La foto, o el cuerpo completo de la solicitud, supera 5 MB. |
 | `415` | `unsupported_photo_format` | Extensión no permitida, como `.pdf` o `.svg`, o contenido que no es PNG ni JPEG. |
 | `422` | `invalid_photo` | Archivo vacío o dañado que no puede decodificarse. |
-| `422` | `validation_error` | Falta `photo`, no es un archivo o hay campos extra. |
+| `422` | `invalid_photo_dimensions` | Las dimensiones o los píxeles totales están fuera de los límites. |
+| `422` | `invalid_face_count` | No se detectó exactamente un rostro. |
+| `422` | `face_too_small` | El rostro detectado mide menos de 160×160 píxeles. |
+| `422` | `validation_error` | Falta `photo`, no es un archivo, está repetido o hay campos extra. |
+| `503` | `photo_processing_unavailable` | No están disponibles las dependencias de validación facial. |
 | `503` | `photo_storage_unavailable` | No se pudo escribir el archivo en disco. |
 
 ```json
@@ -593,20 +614,28 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 ### Galería y descarga
 
 `GET /players/{player_id}/photos` devuelve `{"photos": [...]}` con los metadatos en
-orden de carga, sin paginación. También responde para jugadores deshabilitados. Un
-jugador inexistente responde `404 player_not_found`.
+orden de carga y con un máximo de tres elementos, por lo que no requiere paginación.
+Para un jugador deshabilitado devuelve una lista vacía. Un jugador inexistente responde
+`404 player_not_found`.
 
 `GET /players/{player_id}/photos/{photo_id}` devuelve la imagen con
 `Content-Type: image/png` o `image/jpeg`, `Cache-Control: no-store` y
 `X-Content-Type-Options: nosniff`. Una foto inexistente o de otro jugador responde
-`404 photo_not_found`.
+`404 photo_not_found`. La respuesta siempre es completa (`200`): ignora rangos y
+condicionales y no expone `Content-Disposition`, UUID interno, `ETag` ni
+`Last-Modified`.
+
+`DELETE /players/{player_id}/photos/{photo_id}` elimina de forma permanente la fila y
+el archivo y responde `204`. Puede eliminar la última foto; en ese estado el futuro
+flujo de reconocimiento deberá pasar a resolución manual. Si la fila existe pero falta
+el archivo, elimina la referencia obsoleta y también responde `204`.
 
 El token viaja en el header `Authorization`, por lo que un `<img src>` directo no puede
 autenticarse. El frontend debe pedir la imagen con su cliente autenticado como `Blob`,
 mostrarla con `URL.createObjectURL` y liberarla con `URL.revokeObjectURL`.
 
-No hay límite de fotos por jugador ni endpoint de eliminación. Esta funcionalidad no
-detecta rostros ni calcula embeddings: sólo conserva las fotos base.
+El disco local presupone una única instancia persistente del backend. No se admite un
+despliegue con réplicas, filesystem efímero ni almacenamiento distribuido en esta etapa.
 
 ## Contrato de errores
 
@@ -626,8 +655,9 @@ Frontend debe decidir con `error.code` y mostrar `error.message` como texto legi
 Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not_found`,
 `team_not_found`, `player_disabled`, `team_disabled`, `team_sport_mismatch`,
 `team_gender_mismatch` y `team_capacity_reached`. Los de fotos incluyen
-`photo_too_large`, `unsupported_photo_format`, `invalid_photo`, `photo_not_found` y
-`photo_storage_unavailable`.
+`photo_too_large`, `unsupported_photo_format`, `invalid_photo_dimensions`,
+`invalid_face_count`, `face_too_small`, `player_photo_limit_reached`, `invalid_photo`,
+`photo_not_found`, `photo_processing_unavailable` y `photo_storage_unavailable`.
 
 ## OpenAPI y Hoppscotch
 

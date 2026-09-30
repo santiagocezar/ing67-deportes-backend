@@ -574,8 +574,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 37)
-        self.assertEqual(len(set(operation_ids)), 37)
+        self.assertEqual(len(operation_ids), 38)
+        self.assertEqual(len(set(operation_ids)), 38)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -671,6 +671,7 @@ class ApiContractTests(unittest.TestCase):
             "upgrade-db",
             "create-admin",
             "export-openapi",
+            "reconcile-player-photos",
         ):
             with self.subTest(command=command):
                 self.assertIn(command, commands)

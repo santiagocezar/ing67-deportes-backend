@@ -280,9 +280,16 @@ def update_player(player_id: int, data: PlayerUpdateRequest) -> Player:
 
 
 def set_player_enabled(player_id: int, *, enabled: bool) -> Player:
+    staged_photo_deletions = []
     try:
         player = _lock_player(player_id)
-        if player.is_enabled == enabled:
+        if not enabled:
+            from .player_photos import stage_all_player_photo_deletions
+
+            staged_photo_deletions = stage_all_player_photo_deletions(
+                player.id
+            )
+        if player.is_enabled == enabled and not staged_photo_deletions:
             db.session.rollback()
             return player
 
@@ -293,7 +300,16 @@ def set_player_enabled(player_id: int, *, enabled: bool) -> Player:
         db.session.commit()
     except Exception:
         db.session.rollback()
+        if staged_photo_deletions:
+            from .player_photos import restore_photo_deletions
+
+            restore_photo_deletions(staged_photo_deletions)
         raise
+
+    if staged_photo_deletions:
+        from .player_photos import finalize_photo_deletions
+
+        finalize_photo_deletions(staged_photo_deletions)
     return player
 
 

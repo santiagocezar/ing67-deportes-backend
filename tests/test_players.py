@@ -861,6 +861,9 @@ class PlayerDomainTests(unittest.TestCase):
         with self.app.app_context(), patch(
             "app.services.players._lock_player",
             return_value=player,
+        ), patch(
+            "app.services.player_photos.stage_all_player_photo_deletions",
+            return_value=[],
         ), patch.object(db.session, "commit") as commit:
             result = set_player_enabled(1, enabled=False)
             self.assertFalse(result.is_enabled)
@@ -872,6 +875,9 @@ class PlayerDomainTests(unittest.TestCase):
         with self.app.app_context(), patch(
             "app.services.players._lock_player",
             return_value=player,
+        ), patch(
+            "app.services.player_photos.stage_all_player_photo_deletions",
+            return_value=[],
         ), patch.object(db.session, "commit") as commit:
             result = set_player_enabled(1, enabled=False)
             self.assertEqual(result.disabled_at, disabled_at)
@@ -886,6 +892,59 @@ class PlayerDomainTests(unittest.TestCase):
             self.assertIsNone(result.disabled_at)
             self.assertEqual(result.teams, [])
             commit.assert_called_once()
+
+    def test_disabling_deletes_photos_with_memberships_in_one_transaction(self):
+        player = _player(teams=[_team()])
+        staged = [SimpleNamespace(final_path="final", deleting_path="staged")]
+        with (
+            self.app.app_context(),
+            patch(
+                "app.services.players._lock_player",
+                return_value=player,
+            ),
+            patch(
+                "app.services.player_photos.stage_all_player_photo_deletions",
+                return_value=staged,
+            ) as stage,
+            patch(
+                "app.services.player_photos.finalize_photo_deletions"
+            ) as finalize,
+            patch.object(db.session, "commit") as commit,
+        ):
+            result = set_player_enabled(1, enabled=False)
+        self.assertFalse(result.is_enabled)
+        self.assertEqual(result.teams, [])
+        stage.assert_called_once_with(1)
+        commit.assert_called_once()
+        finalize.assert_called_once_with(staged)
+
+    def test_disable_rollback_restores_staged_photos(self):
+        player = _player(teams=[_team()])
+        staged = [SimpleNamespace(final_path="final", deleting_path="staged")]
+        with (
+            self.app.app_context(),
+            patch(
+                "app.services.players._lock_player",
+                return_value=player,
+            ),
+            patch(
+                "app.services.player_photos.stage_all_player_photo_deletions",
+                return_value=staged,
+            ),
+            patch(
+                "app.services.player_photos.restore_photo_deletions"
+            ) as restore,
+            patch.object(
+                db.session,
+                "commit",
+                side_effect=SQLAlchemyError("failure"),
+            ),
+            patch.object(db.session, "rollback") as rollback,
+        ):
+            with self.assertRaises(SQLAlchemyError):
+                set_player_enabled(1, enabled=False)
+        rollback.assert_called_once()
+        restore.assert_called_once_with(staged)
 
 
 class PlayerMigrationTests(unittest.TestCase):

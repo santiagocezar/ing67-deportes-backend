@@ -770,7 +770,7 @@
         "additionalProperties": false,
         "properties": {
           "photo": {
-            "description": "PNG or JPG image of at most 5 MB.",
+            "description": "Exactly one PNG or JPG file of at most 5 MB, between 320 and 4096 pixels per side, with no more than 12000000 pixels and exactly one detected face of at least 160 by 160 pixels.",
             "format": "binary",
             "title": "Photo",
             "type": "string"
@@ -3573,7 +3573,7 @@
     },
     "/players/{player_id}/disable": {
       "patch": {
-        "description": "Disables a Player and permanently removes all Team memberships. Repeated requests are idempotent.",
+        "description": "Disables a Player and permanently removes all Team memberships and reference photos. Repeated requests are idempotent.",
         "operationId": "playersDisable",
         "parameters": [
           {
@@ -3751,7 +3751,7 @@
     },
     "/players/{player_id}/photos": {
       "get": {
-        "description": "Returns the base photos of an enabled or disabled Player in upload order. Each image is downloaded from its own endpoint.",
+        "description": "Returns at most three base photos of an enabled Player in upload order. Disabled Players have an empty gallery.",
         "operationId": "playerPhotosList",
         "parameters": [
           {
@@ -3838,7 +3838,7 @@
         ]
       },
       "post": {
-        "description": "Stores one PNG or JPG image of at most 5 MB as a base photo for the Player's facial recognition. Rejected files are never persisted.",
+        "description": "Stores one validated PNG or JPG reference image of at most 5 MB. An enabled Player may have at most three; each image must contain exactly one sufficiently large detected face.",
         "operationId": "playerPhotosUpload",
         "parameters": [
           {
@@ -3976,6 +3976,96 @@
       }
     },
     "/players/{player_id}/photos/{photo_id}": {
+      "delete": {
+        "description": "Permanently deletes one reference photo. The last photo may be deleted; automatic recognition then requires manual resolution.",
+        "operationId": "playerPhotosDelete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "photo_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Photo Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Delete a Player photo",
+        "tags": [
+          "Players"
+        ]
+      },
       "get": {
         "description": "Returns the stored image with its PNG or JPG media type. The response is marked as non-storable because it is biometric data.",
         "operationId": "playerPhotosGetImage",

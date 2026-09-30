@@ -31,7 +31,11 @@ class PlayerPhotoPath(ApiRequest):
 
 class PlayerPhotoUploadForm(ApiRequest):
     photo: Annotated[FileStorage, AfterValidator(_require_uploaded_file)] = Field(
-        description="PNG or JPG image of at most 5 MB.",
+        description=(
+            "Exactly one PNG or JPG file of at most 5 MB, between 320 and "
+            "4096 pixels per side, with no more than 12000000 pixels and "
+            "exactly one detected face of at least 160 by 160 pixels."
+        ),
     )
 
 

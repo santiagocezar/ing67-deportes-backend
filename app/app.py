@@ -6,11 +6,13 @@ from typing import Any, Mapping
 
 import click
 from dotenv import load_dotenv
+from flask import request
 from flask_migrate import stamp, upgrade
 from flask_openapi3 import Info, OpenAPI, SecurityScheme
 from pydantic import ValidationError
 from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from .errors import (
     error_response,
@@ -74,6 +76,11 @@ def create_app(
             _environment_flag("API_DOCS_ENABLED", True),
         )
     )
+    from .services.player_photos import (
+        MAX_PLAYER_PHOTO_BYTES,
+        MULTIPART_OVERHEAD_BYTES,
+    )
+
     flask_app = OpenAPI(
         __name__,
         info=Info(
@@ -113,10 +120,17 @@ def create_app(
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
         JWT_TOKEN_LOCATION=["headers"],
         API_DOCS_ENABLED=docs_enabled,
+        MAX_CONTENT_LENGTH=(
+            MAX_PLAYER_PHOTO_BYTES + MULTIPART_OVERHEAD_BYTES
+        ),
         PLAYER_PHOTOS_DIR=os.getenv("PLAYER_PHOTOS_DIR")
         or str(Path(flask_app.instance_path) / "player_photos"),
     )
     flask_app.config.update(overrides)
+    # The business limit is not an environment-specific tuning option.
+    flask_app.config["MAX_CONTENT_LENGTH"] = (
+        MAX_PLAYER_PHOTO_BYTES + MULTIPART_OVERHEAD_BYTES
+    )
 
     db.init_app(flask_app)
     jwt.init_app(flask_app)
@@ -152,6 +166,7 @@ def create_app(
     from .routes.users import auth_bp
     from .schemas.auth import SignupRequest
     from .services.auth import is_token_revoked
+    from .services.player_photos import reconcile_player_photo_files
     from .services.users import (
         DuplicateEmailError,
         UserValidationError,
@@ -211,6 +226,20 @@ def create_app(
             "service_unavailable",
             "The database is temporarily unavailable.",
             503,
+        )
+
+    @flask_app.errorhandler(RequestEntityTooLarge)
+    def request_too_large(_error: RequestEntityTooLarge):
+        if request.method == "POST" and request.path.endswith("/photos"):
+            return error_response(
+                "photo_too_large",
+                "Each photo must be at most 5 MB.",
+                413,
+            )
+        return error_response(
+            "request_too_large",
+            "The request body is too large.",
+            413,
         )
 
     @flask_app.cli.command("init-db")
@@ -283,5 +312,17 @@ def create_app(
                 "The OpenAPI contract could not be exported."
             ) from error
         click.echo(str(output_path))
+
+    @flask_app.cli.command("reconcile-player-photos")
+    def reconcile_player_photos_command() -> None:
+        """Repair recoverable Player photo file states after a stopped run."""
+        try:
+            report = reconcile_player_photo_files()
+        except (OSError, SQLAlchemyError) as error:
+            db.session.rollback()
+            raise click.ClickException(
+                "Player photo reconciliation could not be completed."
+            ) from error
+        click.echo(json.dumps(report.as_dict(), sort_keys=True))
 
     return flask_app
