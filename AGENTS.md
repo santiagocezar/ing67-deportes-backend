@@ -106,8 +106,9 @@ Do not invent paths. Verify a file/folder exists before editing it.
     similarity metric, threshold, or PostgreSQL representation without explicit approval.**
 18. If domain behavior is ambiguous, ask before implementing.
 19. **Code quality is mandatory.** Keep code readable, efficient, cohesive, and easy to
-    maintain. Avoid large files and long functions by separating responsibilities along
-    the approved architecture, without creating speculative or unnecessary abstractions.
+    document, maintain, and scale as requirements grow. Avoid large files and long
+    functions by separating responsibilities along the approved architecture, without
+    creating speculative or unnecessary abstractions.
 20. Treat documentation as part of the implementation. Keep public API, setup, and
     architectural documentation synchronized with behavior.
 21. Before writing a large amount of custom code for a generic technical concern, check
@@ -116,18 +117,35 @@ Do not invent paths. Verify a file/folder exists before editing it.
 
 ---
 
-## Deferred competition domain
+## Implemented competition domain
 
-Competition behavior is unresolved and must not be implemented without a separately
-approved task.
+- A Competition belongs to one Sport, uses `male` or `female`, accepts duplicate names,
+  and is created atomically with all participants.
+- Each Competition registers one even number of enabled Teams from 4 through 16 and
+  exactly one distinct referee per two Teams.
+- Registered Teams, Players, and referees must match the approved Sport, gender, role,
+  membership, and roster-capacity rules.
+- A Competition roster is a historical snapshot. A Player may represent only one Team
+  in a Competition, and later Team/Player changes never rewrite that snapshot.
+- Competition and Match datetimes are timezone-aware. Retroactive Match scheduling and
+  global Team/referee schedule overlaps are rejected.
+- The Match draw has exactly three randomized rounds. Every Team plays once per round
+  against three different opponents, and every selected referee handles one Match per
+  round.
+- Draws may be replaced only while every Match is incomplete. Participant snapshots
+  become immutable once Matches exist.
+- Competition status is `scheduled`, `in_progress`, `finished`, or `discarded`; Match
+  status is `incomplete`, `scheduled`, `in_progress`, or `finished`. Time-derived states
+  are reconciled on relevant API access without background infrastructure.
+- Competition deletion is soft disable. Physical Competition and Match deletion,
+  progressive enrollment, manual pairing, phases, results, points, and standings are
+  not implemented.
 
-The only approved deferred-domain statements are:
+## Deferred competition extensions
 
-- A Player may be associated with up to three Teams globally.
-- Within one Competition, a Player may represent at most one participating Team.
-- Competition rosters will be consulted in Competition context.
-- A Match must not accept an empty or incomplete Team.
-- Do not create Competition-related models merely to support Team management.
+Competition-scoped suspensions, expulsions, cards, global sanctions, results, standings,
+facial recognition, images, and biometric behavior require separately approved tasks.
+Do not add placeholder persistence for them.
 
 ## Implemented player domain
 
