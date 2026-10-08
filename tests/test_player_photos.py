@@ -775,7 +775,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
             content_type=f'multipart/form-data; boundary="{boundary}"',
         )
 
-    def test_administrator_can_upload_list_and_view_photos(self):
+    def test_administrator_can_upload_list_and_publicly_view_photos(self):
         with patch(
             "app.routes.player_photos.add_player_photo",
             return_value=_photo(),
@@ -815,10 +815,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
             "app.routes.player_photos.get_player_photo_file",
             return_value=StoredPhotoFile(stored_path, "image/png"),
         ) as service:
-            with self.client.get(
-                "/players/1/photos/2",
-                headers=self._bearer(self.admin_token),
-            ) as response:
+            with self.client.get("/players/1/photos/2") as response:
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.mimetype, "image/png")
                 self.assertEqual(response.get_data(), PNG_BYTES)
@@ -836,7 +833,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
                     self.assertNotIn(header, response.headers)
         service.assert_called_once_with(1, 2)
 
-    def test_image_download_ignores_range_and_conditional_headers(self):
+    def test_public_image_download_ignores_auth_range_and_conditional_headers(self):
         stored_path = self.temp_dir / "stored.png"
         stored_path.write_bytes(PNG_BYTES)
         with patch(
@@ -846,7 +843,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
             with self.client.get(
                 "/players/1/photos/2",
                 headers={
-                    **self._bearer(self.admin_token),
+                    "Authorization": "Bearer invalid-token",
                     "Range": "bytes=0-4",
                     "If-None-Match": '"internal-etag"',
                     "If-Modified-Since": "Wed, 21 Oct 2015 07:28:00 GMT",
@@ -855,11 +852,10 @@ class PlayerPhotoApiTests(unittest.TestCase):
                 self.assertEqual(response.status_code, 200)
                 self.assertEqual(response.get_data(), PNG_BYTES)
 
-    def test_every_photo_operation_requires_an_administrator_token(self):
+    def test_photo_management_operations_require_an_administrator_token(self):
         requests = (
             ("post", "/players/1/photos"),
             ("get", "/players/1/photos"),
-            ("get", "/players/1/photos/1"),
             ("delete", "/players/1/photos/1"),
         )
         with (
@@ -884,6 +880,26 @@ class PlayerPhotoApiTests(unittest.TestCase):
         listing.assert_not_called()
         image.assert_not_called()
         deletion.assert_not_called()
+
+    def test_public_image_not_found_variants_keep_the_safe_404(self):
+        cases = (
+            "different Player",
+            "nonexistent photo",
+            "deleted or disabled Player photo",
+        )
+        with patch(
+            "app.routes.player_photos.get_player_photo_file",
+            side_effect=PlayerPhotoNotFoundError("The photo does not exist."),
+        ) as service:
+            for case in cases:
+                with self.subTest(case=case):
+                    response = self.client.get("/players/1/photos/9")
+                    self.assertEqual(response.status_code, 404)
+                    self.assertEqual(
+                        response.get_json()["error"]["code"],
+                        "photo_not_found",
+                    )
+        self.assertEqual(service.call_count, len(cases))
 
     def test_upload_without_a_multipart_body_returns_400(self):
         headers = self._bearer(self.admin_token)
@@ -1057,7 +1073,6 @@ class PlayerPhotoApiTests(unittest.TestCase):
         service.assert_called_once_with(1, 2)
 
     def test_list_and_image_map_errors(self):
-        headers = self._bearer(self.admin_token)
         list_service = "app.routes.player_photos.list_player_photos"
         image_service = "app.routes.player_photos.get_player_photo_file"
         delete_service = "app.routes.player_photos.delete_player_photo"
@@ -1128,7 +1143,11 @@ class PlayerPhotoApiTests(unittest.TestCase):
                 response = self.client.open(
                     url,
                     method=method,
-                    headers=headers,
+                    headers=(
+                        self._bearer(self.admin_token)
+                        if target != image_service
+                        else None
+                    ),
                 )
                 self.assertEqual(response.status_code, status)
                 self.assertEqual(response.get_json()["error"]["code"], code)
@@ -1166,6 +1185,19 @@ class PlayerPhotoApiTests(unittest.TestCase):
             {"image/png", "image/jpeg"},
         )
         self.assertIn("204", item["delete"]["responses"])
+        self.assertNotIn("security", item["get"])
+        self.assertEqual(
+            collection["post"]["security"],
+            [{"AccessTokenAuth": []}],
+        )
+        self.assertEqual(
+            collection["get"]["security"],
+            [{"AccessTokenAuth": []}],
+        )
+        self.assertEqual(
+            item["delete"]["security"],
+            [{"AccessTokenAuth": []}],
+        )
 
         schemas = contract["components"]["schemas"]
         upload_form = schemas["PlayerPhotoUploadForm"]

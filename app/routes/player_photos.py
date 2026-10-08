@@ -221,17 +221,13 @@ def get_player_photos(path: PlayerPath):
         "response is marked as non-storable because it is biometric data."
     ),
     operation_id="playerPhotosGetImage",
-    security=ACCESS_SECURITY,
     responses={
         200: PHOTO_IMAGE_RESPONSE,
-        401: ErrorResponse,
-        403: ErrorResponse,
         404: ErrorResponse,
         422: ErrorResponse,
         503: ErrorResponse,
     },
 )
-@administrator_required
 @validate_request()
 def get_player_photo_image(path: PlayerPhotoPath):
     try:

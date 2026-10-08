@@ -4109,26 +4109,6 @@
             },
             "description": "The stored PNG or JPG image."
           },
-          "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Unauthorized"
-          },
-          "403": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Forbidden"
-          },
           "404": {
             "content": {
               "application/json": {
@@ -4160,11 +4140,6 @@
             "description": "Service Unavailable"
           }
         },
-        "security": [
-          {
-            "AccessTokenAuth": []
-          }
-        ],
         "summary": "Get a Player photo image",
         "tags": [
           "Players"

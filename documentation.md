@@ -530,7 +530,9 @@ calidad mínima de las fotos base.
 
 ## Flujo y endpoints de fotos de jugadores
 
-Todas las operaciones requieren un access token activo con rol `administrator`.
+La carga, la galería y la eliminación requieren un access token activo con rol
+`administrator`. La descarga individual de una imagen es pública para que el navegador
+pueda renderizarla directamente mediante `<img src>`.
 
 | Método y ruta | Acción | Respuesta exitosa |
 | --- | --- | --- |
@@ -618,21 +620,22 @@ orden de carga y con un máximo de tres elementos, por lo que no requiere pagina
 Para un jugador deshabilitado devuelve una lista vacía. Un jugador inexistente responde
 `404 player_not_found`.
 
-`GET /players/{player_id}/photos/{photo_id}` devuelve la imagen con
+`GET /players/{player_id}/photos/{photo_id}` es público y devuelve la imagen con
 `Content-Type: image/png` o `image/jpeg`, `Cache-Control: no-store` y
 `X-Content-Type-Options: nosniff`. Una foto inexistente o de otro jugador responde
 `404 photo_not_found`. La respuesta siempre es completa (`200`): ignora rangos y
 condicionales y no expone `Content-Disposition`, UUID interno, `ETag` ni
-`Last-Modified`.
+`Last-Modified`. Sus identificadores numéricos son intencionalmente enumerables; esto
+es un compromiso aceptado para permitir la carga directa de la imagen, no un mecanismo
+de acceso seguro.
 
 `DELETE /players/{player_id}/photos/{photo_id}` elimina de forma permanente la fila y
 el archivo y responde `204`. Puede eliminar la última foto; en ese estado el futuro
 flujo de reconocimiento deberá pasar a resolución manual. Si la fila existe pero falta
 el archivo, elimina la referencia obsoleta y también responde `204`.
 
-El token viaja en el header `Authorization`, por lo que un `<img src>` directo no puede
-autenticarse. El frontend debe pedir la imagen con su cliente autenticado como `Blob`,
-mostrarla con `URL.createObjectURL` y liberarla con `URL.revokeObjectURL`.
+El frontend puede usar la URL pública individual directamente en `<img src>`. La
+galería y las operaciones de gestión continúan usando el cliente autenticado.
 
 El disco local presupone una única instancia persistente del backend. No se admite un
 despliegue con réplicas, filesystem efímero ni almacenamiento distribuido en esta etapa.

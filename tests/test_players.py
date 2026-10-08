@@ -583,8 +583,17 @@ class PlayerApiTests(unittest.TestCase):
                 "/players/{player_id}/photos/{photo_id}",
             },
         )
-        for path_item in player_paths.values():
-            for operation in path_item.values():
+        for path, path_item in player_paths.items():
+            for method, operation in path_item.items():
+                if (
+                    path == "/players/{player_id}/photos/{photo_id}"
+                    and method == "get"
+                ):
+                    self.assertNotIn("security", operation)
+                    self.assertNotIn("401", operation["responses"])
+                    self.assertNotIn("403", operation["responses"])
+                    self.assertIn("422", operation["responses"])
+                    continue
                 self.assertEqual(
                     operation["security"],
                     [{"AccessTokenAuth": []}],
