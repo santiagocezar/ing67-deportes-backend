@@ -9,12 +9,14 @@ from pydantic import ValidationError
 from sqlalchemy import CheckConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import selectinload
 
 from app.app import create_app
 from app.extensions import db
 from app.models import Player, team_players
 from app.schemas.players import (
     PlayerCreateRequest,
+    PlayerListItemResponse,
     PlayerListQuery,
     PlayerListResponse,
     PlayerResponse,
@@ -88,6 +90,7 @@ def _player(
     sport=None,
     gender="male",
     teams=None,
+    photos=None,
     enabled=True,
     disabled_at=None,
 ):
@@ -98,12 +101,17 @@ def _player(
         sport=sport or _sport(),
         gender=gender,
         teams=[_team()] if teams is None else teams,
+        photos=[] if photos is None else photos,
         is_enabled=enabled,
         created_at=datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc),
         disabled_at=disabled_at,
         nationality="must-not-leak",
         dni="must-not-leak",
     )
+
+
+def _photo(photo_id):
+    return SimpleNamespace(id=photo_id)
 
 
 class PlayerSchemaTests(unittest.TestCase):
@@ -196,6 +204,26 @@ class PlayerSchemaTests(unittest.TestCase):
         self.assertNotIn("dni", payload)
         self.assertNotIn("nationality", payload)
 
+    def test_list_item_contract_adds_only_the_primary_photo_path(self):
+        payload = PlayerListItemResponse.model_validate(_player()).model_dump(
+            mode="json"
+        )
+        self.assertEqual(payload["primary_photo_path"], None)
+        self.assertEqual(
+            set(payload),
+            {
+                "id",
+                "name",
+                "sport",
+                "gender",
+                "teams",
+                "is_enabled",
+                "created_at",
+                "disabled_at",
+                "primary_photo_path",
+            },
+        )
+
 
 class PlayerApiTests(unittest.TestCase):
     def setUp(self):
@@ -239,7 +267,7 @@ class PlayerApiTests(unittest.TestCase):
         }
 
     def test_administrator_can_use_every_player_operation(self):
-        player = _player()
+        player = _player(photos=[_photo(3), _photo(9)])
         headers = self._bearer(self.admin_token)
 
         with patch("app.routes.players.create_player", return_value=player):
@@ -250,6 +278,7 @@ class PlayerApiTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 201)
         PlayerResponse.model_validate(response.get_json())
+        self.assertNotIn("primary_photo_path", response.get_json())
 
         page = SimpleNamespace(
             players=[player],
@@ -264,7 +293,12 @@ class PlayerApiTests(unittest.TestCase):
         ) as service:
             response = self.client.get("/players", headers=headers)
         self.assertEqual(response.status_code, 200)
-        PlayerListResponse.model_validate(response.get_json())
+        list_payload = response.get_json()
+        PlayerListResponse.model_validate(list_payload)
+        self.assertEqual(
+            list_payload["players"][0]["primary_photo_path"],
+            "/players/1/photos/9",
+        )
         query = service.call_args.args[0]
         self.assertEqual(
             (query.status, query.sort, query.page),
@@ -283,6 +317,7 @@ class PlayerApiTests(unittest.TestCase):
             response = self.client.get("/players/1", headers=headers)
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()["is_enabled"])
+        self.assertNotIn("primary_photo_path", response.get_json())
 
         with patch("app.routes.players.update_player", return_value=player):
             response = self.client.put(
@@ -291,6 +326,7 @@ class PlayerApiTests(unittest.TestCase):
                 json={"name": "Updated name", "team_ids": []},
             )
         self.assertEqual(response.status_code, 200)
+        self.assertNotIn("primary_photo_path", response.get_json())
 
         for endpoint in ("disable", "enable"):
             with (
@@ -305,10 +341,34 @@ class PlayerApiTests(unittest.TestCase):
                     headers=headers,
                 )
                 self.assertEqual(response.status_code, 200)
+                self.assertNotIn("primary_photo_path", response.get_json())
                 service.assert_called_once_with(
                     1,
                     enabled=endpoint == "enable",
                 )
+
+    def test_list_returns_null_when_a_player_has_no_photos(self):
+        page = SimpleNamespace(
+            players=[_player(1), _player(2, photos=[_photo(7)])],
+            page=1,
+            per_page=25,
+            total_items=2,
+            total_pages=1,
+        )
+        with patch("app.routes.players.list_players", return_value=page):
+            response = self.client.get(
+                "/players",
+                headers=self._bearer(self.admin_token),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [
+                player["primary_photo_path"]
+                for player in response.get_json()["players"]
+            ],
+            [None, "/players/2/photos/7"],
+        )
 
     def test_every_operation_requires_an_administrator_access_token(self):
         requests = (
@@ -621,6 +681,19 @@ class PlayerApiTests(unittest.TestCase):
         self.assertEqual(create_team_ids["default"], [])
         self.assertTrue(create_team_ids["uniqueItems"])
         self.assertEqual(create_team_ids["maxItems"], 3)
+        self.assertIn(
+            "primary_photo_path",
+            schemas["PlayerListItemResponse"]["properties"],
+        )
+        self.assertNotIn(
+            "primary_photo_path",
+            schemas["PlayerResponse"]["properties"],
+        )
+        self.assertEqual(
+            contract["paths"]["/players"]["get"]["responses"]["200"]
+            ["content"]["application/json"]["schema"]["$ref"],
+            "#/components/schemas/PlayerListResponse",
+        )
         self.assertNotIn("delete", contract["paths"]["/players/{player_id}"])
 
 
@@ -843,7 +916,11 @@ class PlayerDomainTests(unittest.TestCase):
             sort="created_at_desc",
             page=3,
         )
-        page, statements = self._capture_list_statements(query, total=26)
+        with patch(
+            "app.services.players.selectinload",
+            wraps=selectinload,
+        ) as load_photos:
+            page, statements = self._capture_list_statements(query, total=26)
         dialect = postgresql.dialect()
         count_sql = str(statements[0].compile(dialect=dialect))
         list_sql = str(statements[1].compile(dialect=dialect))
@@ -864,6 +941,12 @@ class PlayerDomainTests(unittest.TestCase):
         self.assertEqual((page.total_items, page.total_pages), (26, 2))
         self.assertEqual(page.players, [])
         self.assertTrue(statements[1]._with_options)
+        self.assertTrue(
+            any(
+                call.args[0].key == "photos"
+                for call in load_photos.call_args_list
+            )
+        )
 
     def test_player_state_cleanup_is_idempotent_and_never_restores_teams(self):
         player = _player(teams=[_team()])

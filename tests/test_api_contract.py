@@ -597,6 +597,10 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("SportResponse", contract["components"]["schemas"])
         self.assertIn("TeamResponse", contract["components"]["schemas"])
         self.assertIn("PlayerResponse", contract["components"]["schemas"])
+        self.assertIn(
+            "PlayerListItemResponse",
+            contract["components"]["schemas"],
+        )
         self.assertIn("PlayerListResponse", contract["components"]["schemas"])
         self.assertIn(
             "PlayerPhotoListResponse",

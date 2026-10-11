@@ -86,6 +86,10 @@ class PlayerResponse(ApiResponse):
     disabled_at: datetime | None
 
 
+class PlayerListItemResponse(PlayerResponse):
+    primary_photo_path: str | None = None
+
+
 class PlayerPaginationResponse(ApiResponse):
     page: int
     per_page: int
@@ -94,5 +98,5 @@ class PlayerPaginationResponse(ApiResponse):
 
 
 class PlayerListResponse(ApiResponse):
-    players: list[PlayerResponse]
+    players: list[PlayerListItemResponse]
     pagination: PlayerPaginationResponse

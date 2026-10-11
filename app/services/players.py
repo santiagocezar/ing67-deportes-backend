@@ -346,6 +346,7 @@ def list_players(query: PlayerListQuery) -> PlayerPage:
     players_statement = db.select(Player).options(
         joinedload(Player.sport),
         selectinload(Player.teams),
+        selectinload(Player.photos),
     )
     if filters:
         count_statement = count_statement.where(*filters)

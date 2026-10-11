@@ -6,6 +6,7 @@ from ..errors import error_response, json_object_required
 from ..schemas.common import ErrorResponse
 from ..schemas.players import (
     PlayerCreateRequest,
+    PlayerListItemResponse,
     PlayerListQuery,
     PlayerListResponse,
     PlayerPaginationResponse,
@@ -45,6 +46,20 @@ players_bp = APIBlueprint(
 
 def _player_response(player) -> PlayerResponse:
     return PlayerResponse.model_validate(player)
+
+
+def _player_list_item_response(player) -> PlayerListItemResponse:
+    response = PlayerListItemResponse.model_validate(player)
+    photos = getattr(player, "photos", ())
+    if not photos:
+        return response
+    return response.model_copy(
+        update={
+            "primary_photo_path": (
+                f"/players/{player.id}/photos/{photos[-1].id}"
+            )
+        }
+    )
 
 
 def _database_unavailable(operation: str):
@@ -147,7 +162,9 @@ def get_players(query: PlayerListQuery):
         return _database_unavailable("list")
 
     payload = PlayerListResponse(
-        players=[_player_response(player) for player in result.players],
+        players=[
+            _player_list_item_response(player) for player in result.players
+        ],
         pagination=PlayerPaginationResponse(
             page=result.page,
             per_page=result.per_page,

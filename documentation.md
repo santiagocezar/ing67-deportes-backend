@@ -486,6 +486,12 @@ Los filtros se combinan con `AND` y se ejecutan en PostgreSQL. Cada página cont
 registros. Una página fuera de rango responde `200` con `players: []` y los totales
 reales. Los empates se ordenan de forma determinista por `id`.
 
+Cada elemento de `players` incluye `primary_photo_path`. Su valor es la ruta relativa
+al backend de la foto base subida más recientemente (mayor `photo_id`), por ejemplo
+`/players/12/photos/34`; si el jugador no tiene fotos actuales, vale `null`. El frontend
+debe combinar esa ruta con su URL base de API antes de usarla en `<img src>`, sin pedir
+la galería de cada jugador. El campo sólo aparece en `GET /players`.
+
 ```json
 {
   "players": [],

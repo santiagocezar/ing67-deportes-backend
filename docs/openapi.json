@@ -669,6 +669,81 @@
         "title": "PlayerCreateRequest",
         "type": "object"
       },
+      "PlayerListItemResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female"
+            ],
+            "title": "Gender",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "is_enabled": {
+            "title": "Is Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "primary_photo_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Primary Photo Path"
+          },
+          "sport": {
+            "$ref": "#/components/schemas/SportResponse"
+          },
+          "teams": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerTeamResponse"
+            },
+            "title": "Teams",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sport",
+          "gender",
+          "teams",
+          "is_enabled",
+          "created_at",
+          "disabled_at"
+        ],
+        "title": "PlayerListItemResponse",
+        "type": "object"
+      },
       "PlayerListResponse": {
         "properties": {
           "pagination": {
@@ -676,7 +751,7 @@
           },
           "players": {
             "items": {
-              "$ref": "#/components/schemas/PlayerResponse"
+              "$ref": "#/components/schemas/PlayerListItemResponse"
             },
             "title": "Players",
             "type": "array"
