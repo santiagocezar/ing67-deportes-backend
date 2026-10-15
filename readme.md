@@ -103,8 +103,9 @@ python -m flask --app app upgrade-db
 autogeneradas siempre deben revisarse antes de ejecutarse.
 
 Las migraciones `e1f4c8a2b6d0` y `f2a3b4c5d6e7` incorporan las sanciones globales,
-sus equipos congelados y el historial de consumo auditable; aplicar `upgrade-db` antes
-de usar la gestión de sanciones.
+sus equipos congelados y el historial de consumo auditable. La aplicación también
+incluye su consulta paginada, edición controlada y anulación administrativa; aplicar
+`upgrade-db` antes de usar la gestión de sanciones.
 
 ## Carga de deportes iniciales
 

@@ -371,11 +371,9 @@ class PlayerApiTests(unittest.TestCase):
             [None, "/players/2/photos/7"],
         )
 
-    def test_every_operation_requires_an_administrator_access_token(self):
+    def test_write_operations_require_an_administrator_access_token(self):
         requests = (
-            ("get", "/players", None),
             ("post", "/players", self._create_body()),
-            ("get", "/players/1", None),
             ("put", "/players/1", {"name": "New", "team_ids": []}),
             ("patch", "/players/1/disable", None),
             ("patch", "/players/1/enable", None),
@@ -392,6 +390,29 @@ class PlayerApiTests(unittest.TestCase):
                     json=body,
                 )
                 self.assertEqual(response.status_code, 403)
+
+    def test_referees_can_read_players_but_cannot_write_them(self):
+        page = SimpleNamespace(
+            players=[], page=1, per_page=25, total_items=0, total_pages=0
+        )
+        with patch("app.routes.players.list_players", return_value=page):
+            response = self.client.get(
+                "/players", headers=self._bearer(self.referee_token)
+            )
+        self.assertEqual(response.status_code, 200)
+
+        with patch("app.routes.players.get_player", return_value=_player(1)):
+            response = self.client.get(
+                "/players/1", headers=self._bearer(self.referee_token)
+            )
+        self.assertEqual(response.status_code, 200)
+
+        response = self.client.post(
+            "/players",
+            headers=self._bearer(self.referee_token),
+            json=self._create_body(),
+        )
+        self.assertEqual(response.status_code, 403)
 
     def test_required_json_body_errors_return_400_after_authorization(self):
         headers = self._bearer(self.admin_token)
@@ -645,6 +666,7 @@ class PlayerApiTests(unittest.TestCase):
                 "/players/{player_id}",
                 "/players/{player_id}/disable",
                 "/players/{player_id}/enable",
+                "/players/{player_id}/sanctions",
                 "/players/{player_id}/photos",
                 "/players/{player_id}/photos/{photo_id}",
             },

@@ -948,6 +948,54 @@
         "title": "PlayerSanctionCreateRequest",
         "type": "object"
       },
+      "PlayerSanctionListResponse": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/PlayerSanctionPaginationResponse"
+          },
+          "sanctions": {
+            "items": {
+              "$ref": "#/components/schemas/PlayerSanctionResponse"
+            },
+            "title": "Sanctions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sanctions",
+          "pagination"
+        ],
+        "title": "PlayerSanctionListResponse",
+        "type": "object"
+      },
+      "PlayerSanctionPaginationResponse": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "PlayerSanctionPaginationResponse",
+        "type": "object"
+      },
       "PlayerSanctionResponse": {
         "properties": {
           "annulled_at": {
@@ -1072,6 +1120,34 @@
           "served_at"
         ],
         "title": "PlayerSanctionResponse",
+        "type": "object"
+      },
+      "PlayerSanctionUpdateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 250,
+            "title": "Reason",
+            "type": "string"
+          },
+          "suspension_matches": {
+            "maximum": 10,
+            "minimum": 1.0,
+            "title": "Suspension Matches",
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 30,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "reason",
+          "suspension_matches"
+        ],
+        "title": "PlayerSanctionUpdateRequest",
         "type": "object"
       },
       "PlayerTeamResponse": {
@@ -4600,6 +4676,164 @@
         ]
       }
     },
+    "/players/{player_id}/sanctions": {
+      "get": {
+        "description": "Returns a reconciled, filtered, paginated sanction history. Pages contain at most 25 records.",
+        "operationId": "playerSanctionsList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "active",
+                    "served",
+                    "annulled"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Created To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSanctionListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List a Player's sanctions",
+        "tags": [
+          "Player Sanctions"
+        ]
+      }
+    },
     "/referees": {
       "get": {
         "operationId": "refereesList",
@@ -4693,6 +4927,311 @@
         "summary": "List referees",
         "tags": [
           "Referees"
+        ]
+      }
+    },
+    "/sanctions/{sanction_id}": {
+      "get": {
+        "description": "Returns one reconciled Player sanction.",
+        "operationId": "playerSanctionsGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sanction_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Sanction Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSanctionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a Player sanction",
+        "tags": [
+          "Player Sanctions"
+        ]
+      },
+      "put": {
+        "description": "Administrators may update any active sanction. Its creating referee may update it only while the source Match is in progress.",
+        "operationId": "playerSanctionsUpdate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sanction_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Sanction Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerSanctionUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSanctionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Update an active Player sanction",
+        "tags": [
+          "Player Sanctions"
+        ]
+      }
+    },
+    "/sanctions/{sanction_id}/annul": {
+      "patch": {
+        "description": "Administrators may annul an active sanction without deleting history.",
+        "operationId": "playerSanctionsAnnul",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "sanction_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Sanction Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSanctionResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Annul an active Player sanction",
+        "tags": [
+          "Player Sanctions"
         ]
       }
     },
@@ -5828,7 +6367,7 @@
       "name": "Teams"
     },
     {
-      "description": "Administrator-only Player management.",
+      "description": "Player management for administrators and read access for referees.",
       "name": "Players"
     },
     {
@@ -5840,7 +6379,7 @@
       "name": "Matches"
     },
     {
-      "description": "Create global Player suspensions from in-progress Matches.",
+      "description": "Create, query, and manage global Player suspensions.",
       "name": "Player Sanctions"
     },
     {

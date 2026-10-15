@@ -145,6 +145,7 @@ def create_app(
             r"/players(?:/.*)?": {"origins": allowed_origins},
             r"/competitions(?:/.*)?": {"origins": allowed_origins},
             r"/matches(?:/.*)?": {"origins": allowed_origins},
+            r"/sanctions(?:/.*)?": {"origins": allowed_origins},
             r"/referees(?:/.*)?": {"origins": allowed_origins},
         },
         allow_headers=["Content-Type", "Authorization"],

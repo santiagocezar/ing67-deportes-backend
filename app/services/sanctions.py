@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from sqlalchemy import or_
+from dataclasses import dataclass
+
+from sqlalchemy import func, or_
 from sqlalchemy.orm import joinedload, selectinload
 
 from ..extensions import db
@@ -16,7 +18,11 @@ from ..models import (
     Team,
     team_players,
 )
-from ..schemas.sanctions import PlayerSanctionCreateRequest
+from ..schemas.sanctions import (
+    PlayerSanctionCreateRequest,
+    PlayerSanctionListQuery,
+    PlayerSanctionUpdateRequest,
+)
 from .competition_state import utc_now
 from .matches import reconcile_matches
 
@@ -26,6 +32,18 @@ class SanctionServiceError(Exception):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class PlayerSanctionListResult:
+    sanctions: list[PlayerSanction]
+    page: int
+    per_page: int
+    total_items: int
+    total_pages: int
+
+
+SANCTIONS_PER_PAGE = 25
 
 
 def _lock_match(match_id: int) -> Match:
@@ -301,11 +319,196 @@ def reconcile_player_sanctions_batch(
 
 
 def get_sanction(sanction_id: int) -> PlayerSanction:
-    return db.session.execute(
+    sanction = db.session.execute(
         db.select(PlayerSanction)
         .options(*_sanction_options())
         .where(PlayerSanction.id == sanction_id)
-    ).scalar_one()
+    ).scalar_one_or_none()
+    if sanction is None:
+        raise SanctionServiceError(
+            "sanction_not_found", "The Player sanction does not exist.", 404
+        )
+    return sanction
+
+
+def _sanction_reference(sanction_id: int) -> PlayerSanction:
+    sanction = db.session.execute(
+        db.select(PlayerSanction).where(PlayerSanction.id == sanction_id)
+    ).scalar_one_or_none()
+    if sanction is None:
+        raise SanctionServiceError(
+            "sanction_not_found", "The Player sanction does not exist.", 404
+        )
+    return sanction
+
+
+def _locked_sanction(sanction_id: int) -> PlayerSanction:
+    sanction = db.session.execute(
+        db.select(PlayerSanction)
+        .where(PlayerSanction.id == sanction_id)
+        .with_for_update(of=PlayerSanction)
+    ).scalar_one_or_none()
+    if sanction is None:
+        raise SanctionServiceError(
+            "sanction_not_found", "The Player sanction does not exist.", 404
+        )
+    return sanction
+
+
+def _reconcile_sanction(sanction_id: int) -> PlayerSanction:
+    reference = _sanction_reference(sanction_id)
+    reconcile_player_sanctions(reference.player_id)
+    return _locked_sanction(sanction_id)
+
+
+def list_player_sanctions(
+    player_id: int, query: PlayerSanctionListQuery
+) -> PlayerSanctionListResult:
+    """Return a reconciled, bounded page of one Player's sanctions."""
+    try:
+        reconcile_player_sanctions(player_id)
+        db.session.commit()
+        filters = [PlayerSanction.player_id == player_id]
+        if query.status is not None:
+            filters.append(PlayerSanction.status == query.status)
+        if query.created_from is not None:
+            filters.append(PlayerSanction.created_at >= query.created_from)
+        if query.created_to is not None:
+            filters.append(PlayerSanction.created_at <= query.created_to)
+
+        total_items = db.session.execute(
+            db.select(func.count()).select_from(PlayerSanction).where(*filters)
+        ).scalar_one()
+        total_pages = (
+            (total_items + SANCTIONS_PER_PAGE - 1) // SANCTIONS_PER_PAGE
+            if total_items
+            else 0
+        )
+        sanctions = list(
+            db.session.execute(
+                db.select(PlayerSanction)
+                .options(*_sanction_options())
+                .where(*filters)
+                .order_by(PlayerSanction.created_at.desc(), PlayerSanction.id.desc())
+                .limit(SANCTIONS_PER_PAGE)
+                .offset((query.page - 1) * SANCTIONS_PER_PAGE)
+            ).scalars()
+        )
+    except Exception:
+        db.session.rollback()
+        raise
+    return PlayerSanctionListResult(
+        sanctions=sanctions,
+        page=query.page,
+        per_page=SANCTIONS_PER_PAGE,
+        total_items=total_items,
+        total_pages=total_pages,
+    )
+
+
+def get_reconciled_sanction(sanction_id: int) -> PlayerSanction:
+    """Return one sanction after applying completed Match consumptions."""
+    try:
+        sanction = _reconcile_sanction(sanction_id)
+        resolved_sanction_id = sanction.id
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return get_sanction(resolved_sanction_id)
+
+
+def _authorize_sanction_edit(
+    sanction: PlayerSanction, actor_user_id: int, actor_role: str
+) -> None:
+    if actor_role == ADMIN_USER_ROLE:
+        return
+    if actor_role != DEFAULT_USER_ROLE:
+        raise SanctionServiceError(
+            "application_role_required",
+            "A supported application role is required.",
+            403,
+        )
+    if sanction.created_by_user_id != actor_user_id:
+        raise SanctionServiceError(
+            "sanction_owner_required",
+            "Only the creating referee may edit this sanction.",
+            403,
+        )
+    reconcile_matches(utc_now(), match_id=sanction.source_match_id)
+    source_match = _lock_match(sanction.source_match_id)
+    if source_match.status != "in_progress":
+        raise SanctionServiceError(
+            "sanction_edit_window_closed",
+            "A referee may edit only while the source Match is in progress.",
+        )
+
+
+def update_sanction(
+    sanction_id: int,
+    data: PlayerSanctionUpdateRequest,
+    *,
+    actor_user_id: int,
+    actor_role: str,
+) -> PlayerSanction:
+    """Edit permitted sanction fields without mutating audit history."""
+    try:
+        sanction = _reconcile_sanction(sanction_id)
+        if sanction.status != "active":
+            raise SanctionServiceError(
+                "sanction_not_active",
+                "Only an active sanction may be edited.",
+            )
+        _authorize_sanction_edit(sanction, actor_user_id, actor_role)
+        consumption_count = db.session.execute(
+            db.select(func.count())
+            .select_from(PlayerSanctionMatchConsumption)
+            .where(PlayerSanctionMatchConsumption.sanction_id == sanction.id)
+        ).scalar_one()
+        if (
+            consumption_count
+            and data.suspension_matches != sanction.suspension_matches
+        ):
+            raise SanctionServiceError(
+                "sanction_duration_locked",
+                "The suspension duration cannot change after consumption.",
+            )
+        sanction.title = data.title
+        sanction.reason = data.reason
+        if not consumption_count:
+            sanction.suspension_matches = data.suspension_matches
+            sanction.remaining_matches = data.suspension_matches
+        sanction.updated_by_user_id = actor_user_id
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return get_sanction(sanction.id)
+
+
+def annul_sanction(sanction_id: int, *, actor_user_id: int) -> PlayerSanction:
+    """Annul an active sanction while retaining all audit records."""
+    try:
+        sanction = _reconcile_sanction(sanction_id)
+        if sanction.status == "served":
+            raise SanctionServiceError(
+                "sanction_already_served",
+                "A served sanction cannot be annulled.",
+            )
+        if sanction.status == "annulled":
+            raise SanctionServiceError(
+                "sanction_already_annulled",
+                "This sanction has already been annulled.",
+            )
+        sanction.status = "annulled"
+        sanction.annulled_at = utc_now()
+        sanction.annulled_by_user_id = actor_user_id
+        sanction.updated_by_user_id = actor_user_id
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+    return get_sanction(sanction.id)
 
 
 def create_match_origin_sanction(

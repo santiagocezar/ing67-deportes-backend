@@ -30,12 +30,16 @@ from ..services.players import (
 )
 from ..services.sports import SportNotFoundError
 from ..services.teams import TeamDisabledError, TeamNotFoundError
-from .authorization import ACCESS_SECURITY, administrator_required
+from .authorization import (
+    ACCESS_SECURITY,
+    administrator_required,
+    authenticated_user_required,
+)
 
 
 PLAYERS_TAG = Tag(
     name="Players",
-    description="Administrator-only Player management.",
+    description="Player management for administrators and read access for referees.",
 )
 players_bp = APIBlueprint(
     "players",
@@ -153,7 +157,7 @@ def post_player(body: PlayerCreateRequest):
         503: ErrorResponse,
     },
 )
-@administrator_required
+@authenticated_user_required
 @validate_request()
 def get_players(query: PlayerListQuery):
     try:
@@ -194,7 +198,7 @@ def get_players(query: PlayerListQuery):
         503: ErrorResponse,
     },
 )
-@administrator_required
+@authenticated_user_required
 @validate_request()
 def get_player_by_id(path: PlayerPath):
     try:

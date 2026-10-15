@@ -14,12 +14,19 @@ from app.models import (
     PlayerSanctionMatchConsumption,
     PlayerSanctionTeam,
 )
-from app.schemas.sanctions import PlayerSanctionCreateRequest
+from app.schemas.sanctions import (
+    PlayerSanctionCreateRequest,
+    PlayerSanctionListQuery,
+    PlayerSanctionUpdateRequest,
+)
 from app.services.sanctions import (
+    PlayerSanctionListResult,
     SanctionServiceError,
     _overlapping_match_groups,
     _reconcile_locked_player_sanctions,
+    annul_sanction,
     create_match_origin_sanction,
+    update_sanction,
 )
 
 
@@ -112,6 +119,39 @@ class PlayerSanctionSchemaTests(unittest.TestCase):
             with self.subTest(payload=payload):
                 with self.assertRaises(ValidationError):
                     PlayerSanctionCreateRequest.model_validate(payload)
+
+    def test_query_requires_aware_ordered_dates_and_positive_page(self):
+        valid = PlayerSanctionListQuery(
+            status="active",
+            created_from="2026-10-15T10:00:00+00:00",
+            created_to="2026-10-15T10:00:00+00:00",
+        )
+        self.assertEqual(valid.page, 1)
+        for payload in (
+            {"created_from": "2026-10-15T10:00:00"},
+            {
+                "created_from": "2026-10-15T11:00:00+00:00",
+                "created_to": "2026-10-15T10:00:00+00:00",
+            },
+            {"page": 0},
+            {"unknown": "field"},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ValidationError):
+                    PlayerSanctionListQuery.model_validate(payload)
+
+    def test_update_matches_creation_validation_rules(self):
+        request = PlayerSanctionUpdateRequest(
+            title="  Corrected title  ",
+            reason="  Corrected reason  ",
+            suspension_matches=10,
+        )
+        self.assertEqual(request.title, "Corrected title")
+        self.assertEqual(request.reason, "Corrected reason")
+        with self.assertRaises(ValidationError):
+            PlayerSanctionUpdateRequest.model_validate(
+                {"title": "Title", "reason": "Reason", "suspension_matches": 3, "id": 9}
+            )
 
 
 class PlayerSanctionModelTests(unittest.TestCase):
@@ -312,6 +352,102 @@ class PlayerSanctionServiceTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "match_not_in_progress")
         mocked_db.session.rollback.assert_called_once()
 
+    @patch("app.services.sanctions.db")
+    @patch("app.services.sanctions.get_sanction")
+    @patch("app.services.sanctions._reconcile_sanction")
+    def test_edit_updates_duration_and_remaining_before_consumption(
+        self, reconcile, get_sanction, mocked_db
+    ):
+        sanction = SimpleNamespace(
+            id=9,
+            status="active",
+            suspension_matches=3,
+            remaining_matches=3,
+            title="Old title",
+            reason="Old reason",
+            updated_by_user_id=1,
+        )
+        reconcile.return_value = sanction
+        mocked_db.session.execute.return_value.scalar_one.return_value = 0
+        get_sanction.return_value = sanction
+
+        result = update_sanction(
+            9,
+            PlayerSanctionUpdateRequest(
+                title="Updated title", reason="Updated reason", suspension_matches=4
+            ),
+            actor_user_id=7,
+            actor_role="administrator",
+        )
+
+        self.assertIs(result, sanction)
+        self.assertEqual(sanction.suspension_matches, 4)
+        self.assertEqual(sanction.remaining_matches, 4)
+        self.assertEqual(sanction.updated_by_user_id, 7)
+        mocked_db.session.commit.assert_called_once()
+
+    @patch("app.services.sanctions.db")
+    @patch("app.services.sanctions._reconcile_sanction")
+    def test_edit_rejects_duration_change_after_consumption_without_writes(
+        self, reconcile, mocked_db
+    ):
+        sanction = SimpleNamespace(
+            id=9,
+            status="active",
+            suspension_matches=3,
+            remaining_matches=2,
+            title="Old title",
+            reason="Old reason",
+        )
+        reconcile.return_value = sanction
+        mocked_db.session.execute.return_value.scalar_one.return_value = 1
+
+        with self.assertRaises(SanctionServiceError) as raised:
+            update_sanction(
+                9,
+                PlayerSanctionUpdateRequest(
+                    title="Updated title", reason="Updated reason", suspension_matches=4
+                ),
+                actor_user_id=7,
+                actor_role="administrator",
+            )
+
+        self.assertEqual(raised.exception.code, "sanction_duration_locked")
+        self.assertEqual(sanction.title, "Old title")
+        self.assertEqual(sanction.remaining_matches, 2)
+        mocked_db.session.commit.assert_not_called()
+        mocked_db.session.rollback.assert_called_once()
+
+    @patch("app.services.sanctions.utc_now")
+    @patch("app.services.sanctions.db")
+    @patch("app.services.sanctions.get_sanction")
+    @patch("app.services.sanctions._reconcile_sanction")
+    def test_annul_preserves_remaining_matches_and_audits_actor(
+        self, reconcile, get_sanction, mocked_db, mocked_now
+    ):
+        now = datetime(2026, 10, 15, 16, tzinfo=UTC)
+        sanction = SimpleNamespace(
+            id=9,
+            status="active",
+            remaining_matches=2,
+            annulled_at=None,
+            annulled_by_user_id=None,
+            updated_by_user_id=1,
+        )
+        reconcile.return_value = sanction
+        get_sanction.return_value = sanction
+        mocked_now.return_value = now
+
+        result = annul_sanction(9, actor_user_id=7)
+
+        self.assertIs(result, sanction)
+        self.assertEqual(sanction.status, "annulled")
+        self.assertEqual(sanction.remaining_matches, 2)
+        self.assertEqual(sanction.annulled_at, now)
+        self.assertEqual(sanction.annulled_by_user_id, 7)
+        self.assertEqual(sanction.updated_by_user_id, 7)
+        mocked_db.session.commit.assert_called_once()
+
 
 class PlayerSanctionApiTests(unittest.TestCase):
     def setUp(self):
@@ -389,6 +525,78 @@ class PlayerSanctionApiTests(unittest.TestCase):
         self.assertEqual(operation["security"], [{"AccessTokenAuth": []}])
         self.assertIn("201", operation["responses"])
         self.assertIn("PlayerSanctionResponse", self.client.get("/openapi.json").get_json()["components"]["schemas"])
+
+    def test_reads_and_lifecycle_routes_use_expected_roles_and_contracts(self):
+        result = PlayerSanctionListResult(
+            sanctions=[_sanction()],
+            page=1,
+            per_page=25,
+            total_items=1,
+            total_pages=1,
+        )
+        with patch(
+            "app.routes.sanctions.list_player_sanctions", return_value=result
+        ):
+            response = self.client.get(
+                "/players/4/sanctions?status=active",
+                headers=self._headers(self.referee_token),
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["pagination"]["per_page"], 25)
+
+        with patch(
+            "app.routes.sanctions.get_reconciled_sanction", return_value=_sanction()
+        ):
+            response = self.client.get(
+                "/sanctions/9", headers=self._headers(self.referee_token)
+            )
+        self.assertEqual(response.status_code, 200)
+
+        with patch(
+            "app.routes.sanctions.update_sanction", return_value=_sanction()
+        ) as update:
+            response = self.client.put(
+                "/sanctions/9",
+                headers=self._headers(self.referee_token),
+                json={"title": "Title", "reason": "Reason", "suspension_matches": 3},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(update.call_args.kwargs, {"actor_user_id": 6, "actor_role": "referee"})
+
+        response = self.client.patch(
+            "/sanctions/9/annul", headers=self._headers(self.referee_token)
+        )
+        self.assertEqual(response.status_code, 403)
+
+        with patch(
+            "app.routes.sanctions.annul_sanction", return_value=_sanction()
+        ) as annul:
+            response = self.client.patch(
+                "/sanctions/9/annul", headers=self._headers(self.admin_token)
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(annul.call_args.kwargs, {"actor_user_id": 1})
+
+    def test_lifecycle_routes_reject_invalid_payloads_and_service_errors(self):
+        headers = self._headers(self.admin_token)
+        response = self.client.put(
+            "/sanctions/9", headers=headers, json={"title": "Title"}
+        )
+        self.assertEqual(response.status_code, 422)
+
+        with patch(
+            "app.routes.sanctions.update_sanction",
+            side_effect=SanctionServiceError(
+                "sanction_duration_locked", "Duration locked.", 409
+            ),
+        ):
+            response = self.client.put(
+                "/sanctions/9",
+                headers=headers,
+                json={"title": "Title", "reason": "Reason", "suspension_matches": 3},
+            )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.get_json()["error"]["code"], "sanction_duration_locked")
 
 
 if __name__ == "__main__":

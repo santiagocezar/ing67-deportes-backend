@@ -704,14 +704,89 @@ o eliminar asociaciones actuales sigue permitido; tampoco se bloquea registrar u
 equipo si el plantel enviado excluye al jugador sancionado. Sanciones `served` o
 `annulled` no impiden altas posteriores.
 
+Administradores y árbitros pueden consultar jugadores y sanciones. Las lecturas de
+jugadores no cambian los permisos de escritura: crear, editar, habilitar, deshabilitar
+o gestionar fotos de jugadores sigue siendo exclusivo de administradores. La respuesta
+de un jugador no incorpora sanciones; el historial se consulta paginado para evitar
+listas parciales implícitas.
+
+```http
+GET /players/{player_id}/sanctions?status=active&created_from=2026-10-15T10:00:00Z&created_to=2026-10-15T11:00:00Z&page=1
+GET /sanctions/{sanction_id}
+```
+
+El listado usa páginas fijas de 25 elementos, ordenadas por `created_at DESC, id DESC`.
+`status` acepta `active`, `served` o `annulled`; ambos límites de fecha son inclusivos
+y deben incluir zona horaria. Un rango invertido, una fecha sin zona, una página no
+positiva o un parámetro desconocido responden `422`. Antes de filtrar o devolver una
+sanción se reconcilian sus consumos; una página fuera de rango devuelve una lista vacía
+con metadatos exactos.
+
+```json
+{
+  "sanctions": [],
+  "pagination": {
+    "page": 1,
+    "per_page": 25,
+    "total_items": 0,
+    "total_pages": 0
+  }
+}
+```
+
+Una sanción incluye su jugador, título, motivo, duración original y restante, estado,
+partido y competición de origen, equipos congelados, creador, actualizador, anulador
+cuando exista y las fechas del ciclo de vida. No expone correos, tokens, embeddings ni
+el historial interno de consumos.
+
+```http
+PUT /sanctions/{sanction_id}
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Updated title",
+  "reason": "Corrected disciplinary description.",
+  "suspension_matches": 4
+}
+```
+
+Sólo una sanción `active` se puede editar. Un administrador puede editar cualquiera;
+el árbitro creador sólo puede hacerlo mientras el partido de origen siga `in_progress`.
+Después del primer consumo, título y motivo siguen siendo editables, pero la duración
+debe enviarse sin cambios; antes de cualquier consumo, cambiar la duración actualiza
+atómicamente `suspension_matches` y `remaining_matches`. La operación actualiza la
+auditoría de usuario y fecha, sin permitir cambiar jugador, partido, equipos
+congelados, estado, fechas efectivas ni historial.
+
+```http
+PATCH /sanctions/{sanction_id}/annul
+Authorization: Bearer <administrator-access-token>
+```
+
+La anulación no tiene cuerpo y sólo admite sanciones `active`, incluso parcialmente
+consumidas. Conserva `remaining_matches` y los consumos, registra anulador y fecha, y
+detiene consumos futuros. Una sanción `served` responde `409 sanction_already_served`;
+una ya anulada responde `409 sanction_already_annulled`. Una anulación elimina el
+bloqueo de altas de equipos y planteles sólo si no queda otra sanción activa del jugador.
+
 | Estado | `error.code` | Motivo |
 | --- | --- | --- |
 | `403` | `match_referee_required` | Un árbitro no está asignado al partido. |
 | `404` | `player_not_found` | El jugador no existe. |
+| `404` | `sanction_not_found` | La sanción no existe. |
 | `404` | `match_not_found` | El partido no existe. |
 | `409` | `player_not_in_match_roster` | El jugador no pertenece a ninguno de los planteles históricos del partido. |
 | `409` | `match_not_in_progress` | El partido no está en curso. |
 | `409` | `player_active_sanction` | Una sanción activa impide una asociación nueva o inscripción de plantel. |
+| `403` | `sanction_owner_required` | El árbitro no creó la sanción. |
+| `409` | `sanction_edit_window_closed` | El partido de origen ya no está en curso. |
+| `409` | `sanction_not_active` | La sanción servida o anulada no admite edición. |
+| `409` | `sanction_duration_locked` | La duración cambió después del primer consumo. |
+| `409` | `sanction_already_served` | Una sanción servida no puede anularse. |
+| `409` | `sanction_already_annulled` | La sanción ya fue anulada. |
 | `422` | `validation_error` | El cuerpo no cumple el contrato, contiene campos desconocidos o valores inválidos. |
 | `503` | `service_unavailable` | La base de datos no está disponible temporalmente. |
 
