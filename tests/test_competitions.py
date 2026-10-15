@@ -505,6 +505,9 @@ class CompetitionDomainTests(unittest.TestCase):
         with patch(
             "app.services.competition_participants.lock_entities",
             side_effect=[players, teams, referees],
+        ), patch(
+            "app.services.sanctions.reconcile_player_sanctions_batch",
+            return_value={player.id: False for player in players},
         ), patch.object(db.session, "execute", return_value=memberships):
             team_entries, referee_entries = build_participant_entries(
                 request, sport, "male"
@@ -557,6 +560,9 @@ class CompetitionDomainTests(unittest.TestCase):
         with patch(
             "app.services.competition_participants.lock_entities",
             side_effect=[players, teams, referees],
+        ), patch(
+            "app.services.sanctions.reconcile_player_sanctions_batch",
+            return_value={player.id: False for player in players},
         ), patch.object(db.session, "execute", return_value=memberships):
             with self.assertRaises(CompetitionServiceError) as raised:
                 build_participant_entries(request, sport, "male")
@@ -564,6 +570,47 @@ class CompetitionDomainTests(unittest.TestCase):
             raised.exception.code,
             "competition_player_already_registered",
         )
+
+    def test_participant_builder_rejects_active_sanctioned_player(self):
+        sport = Sport(id=1, max_players=2, max_players_in_game=1)
+        teams = [
+            Team(
+                id=index,
+                sport_id=1,
+                gender_category="male",
+                is_enabled=True,
+            )
+            for index in range(1, 5)
+        ]
+        players = [
+            Player(
+                id=100 + index,
+                sport_id=1,
+                gender="male",
+                is_enabled=True,
+            )
+            for index in range(1, 5)
+        ]
+        referees = [User(id=index, role="referee") for index in range(1, 3)]
+        memberships = MagicMock()
+        memberships.all.return_value = [
+            (index, 100 + index) for index in range(1, 5)
+        ]
+        request = ParticipantsRequest(
+            teams=_team_requests(), referee_ids=[1, 2]
+        )
+
+        with patch(
+            "app.services.competition_participants.lock_entities",
+            side_effect=[players, teams, referees],
+        ), patch(
+            "app.services.sanctions.reconcile_player_sanctions_batch",
+            return_value={101: True, 102: False, 103: False, 104: False},
+        ), patch.object(db.session, "execute", return_value=memberships):
+            with self.assertRaises(CompetitionServiceError) as raised:
+                build_participant_entries(request, sport, "male")
+
+        self.assertEqual(raised.exception.code, "player_active_sanction")
 
     def test_creation_rolls_back_on_commit_failure(self):
         request = CompetitionCreateRequest.model_validate(_create_payload())

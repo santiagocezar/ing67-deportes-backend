@@ -24,6 +24,7 @@ from app.schemas.players import (
 )
 from app.services.players import (
     PlayerDisabledError,
+    PlayerActiveSanctionError,
     PlayerNotFoundError,
     PlayerValidationError,
     TeamCapacityReachedError,
@@ -551,6 +552,11 @@ class PlayerApiTests(unittest.TestCase):
         cases = (
             (PlayerNotFoundError("missing"), 404, "player_not_found"),
             (PlayerDisabledError("disabled"), 409, "player_disabled"),
+            (
+                PlayerActiveSanctionError("sanctioned"),
+                409,
+                "player_active_sanction",
+            ),
         )
         for exception, status, code in cases:
             with (
@@ -830,6 +836,9 @@ class PlayerDomainTests(unittest.TestCase):
             "app.services.players._lock_teams",
             return_value=locked_teams,
         ) as lock_teams, patch(
+            "app.services.sanctions.reconcile_player_sanctions",
+            return_value=False,
+        ), patch(
             "app.services.players._validate_team_assignments",
         ) as validate, patch.object(db.session, "commit"):
             result = update_player(1, request)
@@ -837,6 +846,28 @@ class PlayerDomainTests(unittest.TestCase):
         lock_teams.assert_called_once_with([1, 2])
         self.assertEqual(validate.call_args.kwargs["new_team_ids"], {2})
         self.assertEqual([team.id for team in result.teams], [2])
+
+    def test_update_rejects_new_team_when_sanction_remains_active(self):
+        player = _player(teams=[_team(1)])
+        current_memberships = MagicMock()
+        current_memberships.scalars.return_value = [1]
+        request = PlayerUpdateRequest(name="New name", team_ids=[1, 2])
+
+        with self.app.app_context(), patch(
+            "app.services.players._lock_player",
+            return_value=player,
+        ), patch.object(
+            db.session,
+            "execute",
+            return_value=current_memberships,
+        ), patch(
+            "app.services.sanctions.reconcile_player_sanctions",
+            return_value=True,
+        ), patch.object(db.session, "rollback") as rollback:
+            with self.assertRaises(PlayerActiveSanctionError):
+                update_player(1, request)
+
+        rollback.assert_called_once()
 
     def test_update_rolls_back_on_database_failure(self):
         player = _player(teams=[])
@@ -854,6 +885,9 @@ class PlayerDomainTests(unittest.TestCase):
         ), patch(
             "app.services.players._lock_teams",
             return_value=[],
+        ), patch(
+            "app.services.sanctions.reconcile_player_sanctions",
+            return_value=False,
         ), patch.object(
             db.session,
             "commit",

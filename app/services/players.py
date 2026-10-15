@@ -49,6 +49,10 @@ class TeamCapacityReachedError(RuntimeError):
     """Raised when a Team has reached its Player capacity."""
 
 
+class PlayerActiveSanctionError(RuntimeError):
+    """Raised when an active sanction would gain a new Team membership."""
+
+
 @dataclass(frozen=True)
 class PlayerPage:
     players: list[Player]
@@ -254,6 +258,13 @@ def update_player(player_id: int, data: PlayerUpdateRequest) -> Player:
                 )
             ).scalars()
         )
+        from .sanctions import reconcile_player_sanctions
+
+        has_active_sanction = reconcile_player_sanctions(player.id)
+        if set(requested_ids) - current_ids and has_active_sanction:
+            raise PlayerActiveSanctionError(
+                "A Player with an active sanction cannot join a new Team."
+            )
         locked_teams = _lock_teams(
             sorted(current_ids | set(requested_ids))
         )

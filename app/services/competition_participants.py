@@ -64,6 +64,14 @@ def build_participant_entries(
             )
         ).all()
     )
+    from .sanctions import reconcile_player_sanctions_batch
+
+    active_sanctions = reconcile_player_sanctions_batch(player_ids)
+    if any(active_sanctions.values()):
+        raise CompetitionServiceError(
+            "player_active_sanction",
+            "A selected Player has an active sanction.",
+        )
     seen_players: set[int] = set()
     team_entries: list[CompetitionTeam] = []
 

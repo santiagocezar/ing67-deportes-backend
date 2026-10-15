@@ -721,6 +721,11 @@ class Match(db.Model):
         back_populates="source_match",
         passive_deletes=True,
     )
+    sanction_consumptions = db.relationship(
+        "PlayerSanctionMatchConsumption",
+        back_populates="match",
+        passive_deletes=True,
+    )
 
 
 class PlayerSanction(db.Model):
@@ -853,6 +858,11 @@ class PlayerSanction(db.Model):
         cascade="all, delete-orphan",
         order_by="PlayerSanctionTeam.team_id",
     )
+    match_consumptions = db.relationship(
+        "PlayerSanctionMatchConsumption",
+        back_populates="sanction",
+        cascade="all, delete-orphan",
+    )
 
 
 class PlayerSanctionTeam(db.Model):
@@ -881,3 +891,41 @@ class PlayerSanctionTeam(db.Model):
         "PlayerSanction", back_populates="frozen_team_entries"
     )
     team = db.relationship("Team", back_populates="sanction_team_entries")
+
+
+class PlayerSanctionMatchConsumption(db.Model):
+    __tablename__ = "player_sanction_match_consumptions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["sanction_id", "player_id"],
+            ["player_sanctions.id", "player_sanctions.player_id"],
+            name=(
+                "fk_player_sanction_match_consumptions_sanction_player"
+            ),
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["match_id"],
+            ["matches.id"],
+            name="fk_player_sanction_match_consumptions_match_id_matches",
+            ondelete="RESTRICT",
+        ),
+        UniqueConstraint(
+            "player_id",
+            "match_id",
+            name="uq_player_sanction_match_consumptions_player_match",
+        ),
+        Index("ix_player_sanction_match_consumptions_match_id", "match_id"),
+    )
+
+    sanction_id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, nullable=False)
+    match_id = db.Column(db.Integer, primary_key=True)
+    consumed_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    sanction = db.relationship(
+        "PlayerSanction", back_populates="match_consumptions"
+    )
+    match = db.relationship("Match", back_populates="sanction_consumptions")

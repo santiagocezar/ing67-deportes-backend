@@ -680,8 +680,29 @@ alcance.
 
 Al crearla se persiste atómicamente el conjunto congelado de equipos: la unión de los
 equipos actuales del jugador y su equipo histórico en el partido. El snapshot no cambia
-si luego se modifica una asociación o se deshabilita un jugador/equipo. Por ahora no se
-implementan consumo, consultas, edición ni anulación.
+si luego se modifica una asociación o se deshabilita un jugador/equipo.
+
+La reconciliación consume una unidad por cada grupo conexo de partidos superpuestos de
+esos equipos, aunque haya más de un partido en el grupo. Los intervalos son
+semiabiertos (`[starts_at, ends_at)`), por lo cual partidos adyacentes no se agrupan.
+Un grupo sólo consume cuando todos sus partidos terminaron; se registra su primer
+partido ordenado por inicio, fin e identificador como representante canónico. El partido
+de origen nunca consume y un partido debe comenzar estrictamente después de
+`effective_at`. El consumo se aplica a todas las competiciones, no depende de la
+asistencia, el plantel del partido ni de que el jugador/equipo siga habilitado.
+
+Las sanciones no anuladas se sirven por orden de creación e identificador. Una sanción
+más nueva espera a que la anterior quede `served`; después sólo puede considerar
+partidos que comiencen estrictamente después del final efectivo del último grupo que
+sirvió la anterior. Cada consumo queda auditado y una misma pareja jugador/partido
+canónico no puede contar dos veces, incluso ante solicitudes concurrentes.
+
+Antes de agregar una asociación general nueva de equipo a un jugador, o de crear o
+reemplazar un plantel de competición, se reconcilian sus sanciones. Si queda alguna
+`active`, la operación se rechaza completa con `409 player_active_sanction`. Conservar
+o eliminar asociaciones actuales sigue permitido; tampoco se bloquea registrar un
+equipo si el plantel enviado excluye al jugador sancionado. Sanciones `served` o
+`annulled` no impiden altas posteriores.
 
 | Estado | `error.code` | Motivo |
 | --- | --- | --- |
@@ -690,6 +711,7 @@ implementan consumo, consultas, edición ni anulación.
 | `404` | `match_not_found` | El partido no existe. |
 | `409` | `player_not_in_match_roster` | El jugador no pertenece a ninguno de los planteles históricos del partido. |
 | `409` | `match_not_in_progress` | El partido no está en curso. |
+| `409` | `player_active_sanction` | Una sanción activa impide una asociación nueva o inscripción de plantel. |
 | `422` | `validation_error` | El cuerpo no cumple el contrato, contiene campos desconocidos o valores inválidos. |
 | `503` | `service_unavailable` | La base de datos no está disponible temporalmente. |
 
@@ -754,6 +776,7 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
   fotos base.
 - `e1f4c8a2b6d0` agrega sanciones globales originadas en partidos y el snapshot
   inmutable de sus equipos.
+- `f2a3b4c5d6e7` agrega el historial auditable de consumos canónicos de sanciones.
 
 Los archivos de las fotos no están en PostgreSQL sino en `PLAYER_PHOTOS_DIR`. Hacer
 downgrade de `29ab530e58fc` elimina la tabla, pero no borra esos archivos.

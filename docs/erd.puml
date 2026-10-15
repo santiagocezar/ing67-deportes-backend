@@ -153,6 +153,17 @@ entity "player_sanction_teams" as player_sanction_teams {
   * team_id : INTEGER <<PK, FK>>
 }
 
+entity "player_sanction_match_consumptions" as player_sanction_match_consumptions {
+  * sanction_id : INTEGER <<PK, FK>>
+  * match_id : INTEGER <<PK, FK>>
+  --
+  * player_id : INTEGER <<FK>>
+  * consumed_at : TIMESTAMPTZ
+  --
+  UQ (player_id, match_id)
+  IX (match_id)
+}
+
 users ||--o{ auth_sessions : owns
 sports ||--o{ teams : classifies
 sports ||--o{ players : classifies
@@ -175,6 +186,9 @@ matches ||--o{ player_sanctions : originates
 users ||--o{ player_sanctions : creates/updates/annuls
 player_sanctions ||--|{ player_sanction_teams : freezes
 teams ||--o{ player_sanction_teams : snapshots
+player_sanctions ||--o{ player_sanction_match_consumptions : serves
+players ||--o{ player_sanction_match_consumptions : guards
+matches ||--o{ player_sanction_match_consumptions : canonical_group
 
 note right of users
   role IN ('administrator', 'referee')
@@ -258,6 +272,13 @@ note right of player_sanction_teams
   immutable frozen Team union at sanction creation
   sanction cleanup may cascade only from internal physical cleanup
   Team deletion is restricted
+end note
+
+note right of player_sanction_match_consumptions
+  one canonical overlap group per Player and Match
+  (sanction_id, player_id) references its owning sanction
+  sanction cleanup may cascade only from internal physical cleanup
+  Match deletion is restricted
 end note
 
 @enduml

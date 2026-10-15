@@ -224,6 +224,24 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
                 item["name"]: item
                 for item in inspector.get_foreign_keys("player_sanction_teams")
             }
+            consumption_foreign_keys = {
+                item["name"]: item
+                for item in inspector.get_foreign_keys(
+                    "player_sanction_match_consumptions"
+                )
+            }
+            consumption_unique_constraints = {
+                item["name"]
+                for item in inspector.get_unique_constraints(
+                    "player_sanction_match_consumptions"
+                )
+            }
+            consumption_indexes = {
+                item["name"]
+                for item in inspector.get_indexes(
+                    "player_sanction_match_consumptions"
+                )
+            }
 
         self.assertEqual(
             foreign_keys["fk_player_sanctions_player_id_players"]["options"].get(
@@ -253,6 +271,26 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
                 "fk_player_sanction_teams_sanction_id_player_sanctions"
             ]["options"].get("ondelete"),
             "CASCADE",
+        )
+        self.assertEqual(
+            consumption_foreign_keys[
+                "fk_player_sanction_match_consumptions_sanction_player"
+            ]["options"].get("ondelete"),
+            "CASCADE",
+        )
+        self.assertEqual(
+            consumption_foreign_keys[
+                "fk_player_sanction_match_consumptions_match_id_matches"
+            ]["options"].get("ondelete"),
+            "RESTRICT",
+        )
+        self.assertIn(
+            "uq_player_sanction_match_consumptions_player_match",
+            consumption_unique_constraints,
+        )
+        self.assertIn(
+            "ix_player_sanction_match_consumptions_match_id",
+            consumption_indexes,
         )
 
     def test_two_concurrent_uploads_cannot_both_create_the_third_photo(self):

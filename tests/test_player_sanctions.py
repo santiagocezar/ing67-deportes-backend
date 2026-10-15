@@ -9,10 +9,16 @@ from sqlalchemy import CheckConstraint, ForeignKeyConstraint, Index, UniqueConst
 
 from app.app import create_app
 from app.extensions import db
-from app.models import PlayerSanction, PlayerSanctionTeam
+from app.models import (
+    PlayerSanction,
+    PlayerSanctionMatchConsumption,
+    PlayerSanctionTeam,
+)
 from app.schemas.sanctions import PlayerSanctionCreateRequest
 from app.services.sanctions import (
     SanctionServiceError,
+    _overlapping_match_groups,
+    _reconcile_locked_player_sanctions,
     create_match_origin_sanction,
 )
 
@@ -151,11 +157,89 @@ class PlayerSanctionModelTests(unittest.TestCase):
         self.assertEqual(
             len(PlayerSanctionTeam.__table__.primary_key.columns), 2
         )
+        consumption_constraints = {
+            item.name
+            for item in PlayerSanctionMatchConsumption.__table__.constraints
+        }
+        self.assertIn(
+            "fk_player_sanction_match_consumptions_sanction_player",
+            consumption_constraints,
+        )
+        self.assertIn(
+            "fk_player_sanction_match_consumptions_match_id_matches",
+            consumption_constraints,
+        )
+        self.assertIn(
+            "uq_player_sanction_match_consumptions_player_match",
+            consumption_constraints,
+        )
+        self.assertIn(
+            "ix_player_sanction_match_consumptions_match_id",
+            {
+                item.name
+                for item in PlayerSanctionMatchConsumption.__table__.indexes
+                if isinstance(item, Index)
+            },
+        )
 
 
 class PlayerSanctionServiceTests(unittest.TestCase):
+    def test_overlapping_groups_are_connected_and_adjacent_matches_split(self):
+        start = datetime(2026, 10, 15, 10, tzinfo=UTC)
+        matches = [
+            SimpleNamespace(id=3, starts_at=start.replace(hour=11), ends_at=start.replace(hour=12)),
+            SimpleNamespace(id=1, starts_at=start, ends_at=start.replace(hour=11)),
+            SimpleNamespace(id=2, starts_at=start.replace(hour=10, minute=30), ends_at=start.replace(hour=11, minute=30)),
+            SimpleNamespace(id=4, starts_at=start.replace(hour=12), ends_at=start.replace(hour=13)),
+        ]
+        groups = _overlapping_match_groups(matches)
+        self.assertEqual([[match.id for match in group] for group in groups], [[1, 2, 3], [4]])
+
+    @patch("app.services.sanctions.db")
+    @patch("app.services.sanctions._candidate_matches")
+    def test_reconciliation_serves_oldest_sanction_without_spilling_final_group(
+        self, candidates, mocked_db
+    ):
+        start = datetime(2026, 10, 15, 10, tzinfo=UTC)
+        first = SimpleNamespace(
+            id=1,
+            status="active",
+            effective_at=start.replace(hour=9),
+            remaining_matches=1,
+            served_at=None,
+        )
+        second = SimpleNamespace(
+            id=2,
+            status="active",
+            effective_at=start.replace(hour=9),
+            remaining_matches=1,
+            served_at=None,
+        )
+        final_group = [
+            SimpleNamespace(id=9, starts_at=start, ends_at=start.replace(hour=11)),
+            SimpleNamespace(id=10, starts_at=start.replace(hour=10, minute=30), ends_at=start.replace(hour=12)),
+        ]
+        candidates.side_effect = [final_group, final_group]
+
+        active = _reconcile_locked_player_sanctions(
+            SimpleNamespace(id=4),
+            [first, second],
+            set(),
+            start.replace(hour=13),
+        )
+
+        self.assertTrue(active)
+        self.assertEqual(first.status, "served")
+        self.assertEqual(first.served_at, start.replace(hour=12))
+        self.assertEqual(second.status, "active")
+        self.assertEqual(second.remaining_matches, 1)
+        self.assertEqual(mocked_db.session.add.call_count, 1)
+        consumption = mocked_db.session.add.call_args.args[0]
+        self.assertEqual((consumption.sanction_id, consumption.player_id, consumption.match_id), (1, 4, 9))
+
     @patch("app.services.sanctions.db")
     @patch("app.services.sanctions.get_sanction")
+    @patch("app.services.sanctions.reconcile_player_sanctions")
     @patch("app.services.sanctions._locked_current_team_ids", return_value=[1, 3])
     @patch("app.services.sanctions._source_roster_team_id", return_value=2)
     @patch("app.services.sanctions.reconcile_matches")
@@ -168,6 +252,7 @@ class PlayerSanctionServiceTests(unittest.TestCase):
         _reconcile,
         _source_team,
         _current_teams,
+        _reconcile_sanctions,
         get_sanction,
         mocked_db,
     ):

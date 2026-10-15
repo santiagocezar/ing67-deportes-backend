@@ -16,6 +16,7 @@ from ..schemas.players import (
 )
 from ..services.players import (
     PlayerDisabledError,
+    PlayerActiveSanctionError,
     PlayerNotFoundError,
     PlayerValidationError,
     TeamCapacityReachedError,
@@ -80,6 +81,8 @@ def _assignment_error(error: Exception):
         return error_response("team_sport_mismatch", str(error), 409)
     if isinstance(error, TeamGenderMismatchError):
         return error_response("team_gender_mismatch", str(error), 409)
+    if isinstance(error, PlayerActiveSanctionError):
+        return error_response("player_active_sanction", str(error), 409)
     return error_response("team_capacity_reached", str(error), 409)
 
 
@@ -89,6 +92,7 @@ ASSIGNMENT_ERRORS = (
     TeamSportMismatchError,
     TeamGenderMismatchError,
     TeamCapacityReachedError,
+    PlayerActiveSanctionError,
 )
 
 

@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from sqlalchemy import or_
 from sqlalchemy.orm import joinedload, selectinload
 
 from ..extensions import db
@@ -8,6 +11,7 @@ from ..models import (
     Match,
     Player,
     PlayerSanction,
+    PlayerSanctionMatchConsumption,
     PlayerSanctionTeam,
     Team,
     team_players,
@@ -123,6 +127,179 @@ def _sanction_options():
     )
 
 
+def _overlapping_match_groups(matches: list[Match]) -> list[list[Match]]:
+    """Build connected half-open interval groups from deterministically sorted Matches."""
+    groups: list[list[Match]] = []
+    group_end: datetime | None = None
+    for match in sorted(
+        matches, key=lambda item: (item.starts_at, item.ends_at, item.id)
+    ):
+        if group_end is None or match.starts_at >= group_end:
+            groups.append([match])
+            group_end = match.ends_at
+            continue
+        groups[-1].append(match)
+        if match.ends_at > group_end:
+            group_end = match.ends_at
+    return groups
+
+
+def _candidate_matches(
+    sanction: PlayerSanction,
+    activation_boundary: datetime,
+) -> list[Match]:
+    frozen_team_ids = [
+        entry.team_id for entry in sanction.frozen_team_entries
+    ]
+    if not frozen_team_ids:
+        return []
+    return list(
+        db.session.execute(
+            db.select(Match)
+            .where(
+                Match.id != sanction.source_match_id,
+                Match.starts_at.is_not(None),
+                Match.ends_at.is_not(None),
+                Match.starts_at > activation_boundary,
+                or_(
+                    Match.team_1_id.in_(frozen_team_ids),
+                    Match.team_2_id.in_(frozen_team_ids),
+                ),
+            )
+            .order_by(Match.starts_at, Match.ends_at, Match.id)
+        ).scalars()
+    )
+
+
+def _reconcile_locked_player_sanctions(
+    player: Player,
+    sanctions: list[PlayerSanction],
+    consumed_match_ids: set[int],
+    now: datetime,
+) -> bool:
+    """Consume completed qualifying Match groups for one already locked Player."""
+    has_active_sanction = False
+    preceding_served_at: datetime | None = None
+
+    for sanction in sanctions:
+        if sanction.status == "annulled":
+            continue
+        if sanction.status == "served":
+            preceding_served_at = sanction.served_at
+            continue
+
+        has_active_sanction = True
+        activation_boundary = sanction.effective_at
+        if (
+            preceding_served_at is not None
+            and preceding_served_at > activation_boundary
+        ):
+            activation_boundary = preceding_served_at
+
+        candidates = _candidate_matches(sanction, activation_boundary)
+        completed_groups = []
+        for group in _overlapping_match_groups(candidates):
+            canonical_match = group[0]
+            completed_at = max(match.ends_at for match in group)
+            if completed_at <= now and canonical_match.id not in consumed_match_ids:
+                completed_groups.append((completed_at, canonical_match))
+        completed_groups.sort(key=lambda item: (item[0], item[1].id))
+
+        for completed_at, canonical_match in completed_groups[
+            : sanction.remaining_matches
+        ]:
+            db.session.add(
+                PlayerSanctionMatchConsumption(
+                    sanction_id=sanction.id,
+                    player_id=player.id,
+                    match_id=canonical_match.id,
+                )
+            )
+            consumed_match_ids.add(canonical_match.id)
+            sanction.remaining_matches -= 1
+            if sanction.remaining_matches == 0:
+                sanction.status = "served"
+                sanction.served_at = completed_at
+                preceding_served_at = completed_at
+                has_active_sanction = False
+                break
+
+        if sanction.status == "active":
+            break
+
+    return has_active_sanction
+
+
+def reconcile_player_sanctions(
+    player_id: int,
+    now: datetime | None = None,
+) -> bool:
+    """Reconcile one Player without committing the caller's transaction."""
+    return reconcile_player_sanctions_batch([player_id], now=now).get(
+        player_id, False
+    )
+
+
+def reconcile_player_sanctions_batch(
+    player_ids: list[int],
+    now: datetime | None = None,
+) -> dict[int, bool]:
+    """Reconcile sorted unique Players while preserving caller transaction control."""
+    identifiers = sorted(set(player_ids))
+    if not identifiers:
+        return {}
+    current_time = utc_now() if now is None else now
+    players = list(
+        db.session.execute(
+            db.select(Player)
+            .where(Player.id.in_(identifiers))
+            .order_by(Player.id)
+            .with_for_update(of=Player)
+        ).scalars()
+    )
+    players_by_id = {player.id: player for player in players}
+    sanctions_by_player = {player_id: [] for player_id in identifiers}
+    sanctions = list(
+        db.session.execute(
+            db.select(PlayerSanction)
+            .options(selectinload(PlayerSanction.frozen_team_entries))
+            .where(PlayerSanction.player_id.in_(identifiers))
+            .order_by(
+                PlayerSanction.player_id,
+                PlayerSanction.created_at,
+                PlayerSanction.id,
+            )
+            .with_for_update(of=PlayerSanction)
+        ).scalars()
+    )
+    for sanction in sanctions:
+        sanctions_by_player[sanction.player_id].append(sanction)
+
+    consumed_matches_by_player = {player_id: set() for player_id in identifiers}
+    for player_id, match_id in db.session.execute(
+        db.select(
+            PlayerSanctionMatchConsumption.player_id,
+            PlayerSanctionMatchConsumption.match_id,
+        ).where(PlayerSanctionMatchConsumption.player_id.in_(identifiers))
+    ):
+        consumed_matches_by_player[player_id].add(match_id)
+
+    result = {}
+    for player_id in identifiers:
+        player = players_by_id.get(player_id)
+        if player is None:
+            raise SanctionServiceError(
+                "player_not_found", "The Player does not exist.", 404
+            )
+        result[player_id] = _reconcile_locked_player_sanctions(
+            player,
+            sanctions_by_player[player_id],
+            consumed_matches_by_player[player_id],
+            current_time,
+        )
+    return result
+
+
 def get_sanction(sanction_id: int) -> PlayerSanction:
     return db.session.execute(
         db.select(PlayerSanction)
@@ -155,6 +332,7 @@ def create_match_origin_sanction(
                 "The source Match must be in progress.",
             )
 
+        reconcile_player_sanctions(player.id)
         source_team_id = _source_roster_team_id(match, player.id)
         _authorize_actor(match, actor_user_id, actor_role)
         frozen_team_ids = sorted(
