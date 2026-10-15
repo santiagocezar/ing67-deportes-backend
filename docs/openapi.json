@@ -920,6 +920,160 @@
         "title": "PlayerResponse",
         "type": "object"
       },
+      "PlayerSanctionCreateRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "maxLength": 250,
+            "title": "Reason",
+            "type": "string"
+          },
+          "suspension_matches": {
+            "maximum": 10,
+            "minimum": 1.0,
+            "title": "Suspension Matches",
+            "type": "integer"
+          },
+          "title": {
+            "maxLength": 30,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "reason",
+          "suspension_matches"
+        ],
+        "title": "PlayerSanctionCreateRequest",
+        "type": "object"
+      },
+      "PlayerSanctionResponse": {
+        "properties": {
+          "annulled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annulled At"
+          },
+          "annuller": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SanctionUserSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "creator": {
+            "$ref": "#/components/schemas/SanctionUserSummary"
+          },
+          "effective_at": {
+            "format": "date-time",
+            "title": "Effective At",
+            "type": "string"
+          },
+          "frozen_teams": {
+            "items": {
+              "$ref": "#/components/schemas/SanctionTeamSummary"
+            },
+            "title": "Frozen Teams",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "player": {
+            "$ref": "#/components/schemas/SanctionPlayerSummary"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "remaining_matches": {
+            "title": "Remaining Matches",
+            "type": "integer"
+          },
+          "served_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Served At"
+          },
+          "source_competition": {
+            "$ref": "#/components/schemas/SanctionCompetitionSummary"
+          },
+          "source_match": {
+            "$ref": "#/components/schemas/SanctionMatchSummary"
+          },
+          "status": {
+            "enum": [
+              "active",
+              "served",
+              "annulled"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suspension_matches": {
+            "title": "Suspension Matches",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updater": {
+            "$ref": "#/components/schemas/SanctionUserSummary"
+          }
+        },
+        "required": [
+          "id",
+          "player",
+          "title",
+          "reason",
+          "suspension_matches",
+          "remaining_matches",
+          "status",
+          "source_match",
+          "source_competition",
+          "frozen_teams",
+          "creator",
+          "updater",
+          "annuller",
+          "effective_at",
+          "created_at",
+          "updated_at",
+          "annulled_at",
+          "served_at"
+        ],
+        "title": "PlayerSanctionResponse",
+        "type": "object"
+      },
       "PlayerTeamResponse": {
         "properties": {
           "id": {
@@ -1082,6 +1236,103 @@
           "is_enabled"
         ],
         "title": "RosterPlayerResponse",
+        "type": "object"
+      },
+      "SanctionCompetitionSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SanctionCompetitionSummary",
+        "type": "object"
+      },
+      "SanctionMatchSummary": {
+        "properties": {
+          "ends_at": {
+            "format": "date-time",
+            "title": "Ends At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "starts_at": {
+            "format": "date-time",
+            "title": "Starts At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "starts_at",
+          "ends_at"
+        ],
+        "title": "SanctionMatchSummary",
+        "type": "object"
+      },
+      "SanctionPlayerSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SanctionPlayerSummary",
+        "type": "object"
+      },
+      "SanctionTeamSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SanctionTeamSummary",
+        "type": "object"
+      },
+      "SanctionUserSummary": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "SanctionUserSummary",
         "type": "object"
       },
       "SignupRequest": {
@@ -3137,6 +3388,134 @@
         "summary": "Schedule or reschedule a Match",
         "tags": [
           "Matches"
+        ]
+      }
+    },
+    "/matches/{match_id}/players/{player_id}/sanctions": {
+      "post": {
+        "operationId": "playerSanctionsCreateFromMatch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "player_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Player Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlayerSanctionCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerSanctionResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Create a global Player sanction from a Match",
+        "tags": [
+          "Player Sanctions"
         ]
       }
     },
@@ -5459,6 +5838,10 @@
     {
       "description": "Random Competition draws and Match scheduling.",
       "name": "Matches"
+    },
+    {
+      "description": "Create global Player suspensions from in-progress Matches.",
+      "name": "Player Sanctions"
     },
     {
       "description": "Administrator-only referee lookup.",

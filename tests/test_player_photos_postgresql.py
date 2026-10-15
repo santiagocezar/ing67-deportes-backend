@@ -201,6 +201,60 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
                 db.session.commit()
             db.session.rollback()
 
+    def test_sanction_migration_creates_checks_foreign_keys_and_index(self):
+        with self.app.app_context():
+            db.session.remove()
+            downgrade(revision="78feb1bb58cd")
+            self.assertFalse(inspect(db.engine).has_table("player_sanctions"))
+            upgrade()
+            inspector = inspect(db.engine)
+            foreign_keys = {
+                item["name"]: item
+                for item in inspector.get_foreign_keys("player_sanctions")
+            }
+            checks = {
+                item["name"]
+                for item in inspector.get_check_constraints("player_sanctions")
+            }
+            indexes = {
+                item["name"]
+                for item in inspector.get_indexes("player_sanctions")
+            }
+            snapshot_foreign_keys = {
+                item["name"]: item
+                for item in inspector.get_foreign_keys("player_sanction_teams")
+            }
+
+        self.assertEqual(
+            foreign_keys["fk_player_sanctions_player_id_players"]["options"].get(
+                "ondelete"
+            ),
+            "RESTRICT",
+        )
+        self.assertEqual(
+            foreign_keys[
+                "fk_player_sanctions_source_match_id_matches"
+            ]["referred_table"],
+            "matches",
+        )
+        self.assertTrue(
+            {
+                "ck_player_sanctions_title_not_blank",
+                "ck_player_sanctions_reason_not_blank",
+                "ck_player_sanctions_suspension_matches",
+                "ck_player_sanctions_remaining_matches",
+                "ck_player_sanctions_status",
+                "ck_player_sanctions_lifecycle",
+            }.issubset(checks)
+        )
+        self.assertIn("ix_player_sanctions_player_status_created_at", indexes)
+        self.assertEqual(
+            snapshot_foreign_keys[
+                "fk_player_sanction_teams_sanction_id_player_sanctions"
+            ]["options"].get("ondelete"),
+            "CASCADE",
+        )
+
     def test_two_concurrent_uploads_cannot_both_create_the_third_photo(self):
         with self.app.app_context():
             for index in range(2):

@@ -646,6 +646,53 @@ galería y las operaciones de gestión continúan usando el cliente autenticado.
 El disco local presupone una única instancia persistente del backend. No se admite un
 despliegue con réplicas, filesystem efímero ni almacenamiento distribuido en esta etapa.
 
+## Sanciones globales de jugadores
+
+La creación inicial de sanciones globales se realiza desde un partido que está en curso:
+
+```http
+POST /matches/{match_id}/players/{player_id}/sanctions
+Authorization: Bearer <access-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "title": "Serious misconduct",
+  "reason": "The player committed a disciplinary offense.",
+  "suspension_matches": 3
+}
+```
+
+Sólo puede crearla un administrador o el árbitro asignado al partido. El jugador debe
+figurar en el plantel histórico de uno de los dos equipos del partido, incluso si hoy
+está deshabilitado. `title` y `reason` se recortan en los extremos, no pueden quedar
+vacíos y admiten hasta 30 y 250 caracteres; `suspension_matches` es un entero estricto
+entre 1 y 10.
+
+La sanción nace `active`, con `remaining_matches` igual a la duración. Su
+`effective_at` conserva el final del partido de origen: ese partido no consume la
+sanción y los futuros partidos sólo podrán calificar si empiezan estrictamente después
+de esa hora. La respuesta `201` incluye el jugador, partido y competición de origen,
+equipos congelados, auditoría de creador/actualizador y todos los campos de ciclo de
+vida. La sanción es global; la competición de origen es contexto, no un límite de
+alcance.
+
+Al crearla se persiste atómicamente el conjunto congelado de equipos: la unión de los
+equipos actuales del jugador y su equipo histórico en el partido. El snapshot no cambia
+si luego se modifica una asociación o se deshabilita un jugador/equipo. Por ahora no se
+implementan consumo, consultas, edición ni anulación.
+
+| Estado | `error.code` | Motivo |
+| --- | --- | --- |
+| `403` | `match_referee_required` | Un árbitro no está asignado al partido. |
+| `404` | `player_not_found` | El jugador no existe. |
+| `404` | `match_not_found` | El partido no existe. |
+| `409` | `player_not_in_match_roster` | El jugador no pertenece a ninguno de los planteles históricos del partido. |
+| `409` | `match_not_in_progress` | El partido no está en curso. |
+| `422` | `validation_error` | El cuerpo no cumple el contrato, contiene campos desconocidos o valores inválidos. |
+| `503` | `service_unavailable` | La base de datos no está disponible temporalmente. |
+
 ## Contrato de errores
 
 | Estado | Uso |
@@ -705,6 +752,8 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
   partidos randomizados.
 - `29ab530e58fc` agrega `player_photos`, con la referencia y los metadatos de las
   fotos base.
+- `e1f4c8a2b6d0` agrega sanciones globales originadas en partidos y el snapshot
+  inmutable de sus equipos.
 
 Los archivos de las fotos no están en PostgreSQL sino en `PLAYER_PHOTOS_DIR`. Hacer
 downgrade de `29ab530e58fc` elimina la tabla, pero no borra esos archivos.

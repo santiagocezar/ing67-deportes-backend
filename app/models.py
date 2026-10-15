@@ -176,6 +176,11 @@ class Team(db.Model):
         back_populates="team_2",
         passive_deletes=True,
     )
+    sanction_team_entries = db.relationship(
+        "PlayerSanctionTeam",
+        back_populates="team",
+        passive_deletes=True,
+    )
 
 
 class Player(db.Model):
@@ -243,6 +248,12 @@ class Player(db.Model):
         back_populates="player",
         passive_deletes=True,
         order_by="PlayerPhoto.id",
+    )
+    sanctions = db.relationship(
+        "PlayerSanction",
+        back_populates="player",
+        passive_deletes=True,
+        order_by="PlayerSanction.created_at.desc()",
     )
 
 
@@ -319,6 +330,24 @@ class User(db.Model):
     refereed_matches = db.relationship(
         "Match",
         back_populates="referee",
+        passive_deletes=True,
+    )
+    created_sanctions = db.relationship(
+        "PlayerSanction",
+        foreign_keys="PlayerSanction.created_by_user_id",
+        back_populates="created_by",
+        passive_deletes=True,
+    )
+    updated_sanctions = db.relationship(
+        "PlayerSanction",
+        foreign_keys="PlayerSanction.updated_by_user_id",
+        back_populates="updated_by",
+        passive_deletes=True,
+    )
+    annulled_sanctions = db.relationship(
+        "PlayerSanction",
+        foreign_keys="PlayerSanction.annulled_by_user_id",
+        back_populates="annulled_by",
         passive_deletes=True,
     )
 
@@ -687,3 +716,168 @@ class Match(db.Model):
         back_populates="matches_as_team_2",
     )
     referee = db.relationship("User", back_populates="refereed_matches")
+    sanctions = db.relationship(
+        "PlayerSanction",
+        back_populates="source_match",
+        passive_deletes=True,
+    )
+
+
+class PlayerSanction(db.Model):
+    __tablename__ = "player_sanctions"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(trim(title)) > 0",
+            name="ck_player_sanctions_title_not_blank",
+        ),
+        CheckConstraint(
+            "char_length(trim(reason)) > 0",
+            name="ck_player_sanctions_reason_not_blank",
+        ),
+        CheckConstraint(
+            "suspension_matches BETWEEN 1 AND 10",
+            name="ck_player_sanctions_suspension_matches",
+        ),
+        CheckConstraint(
+            "remaining_matches BETWEEN 0 AND suspension_matches",
+            name="ck_player_sanctions_remaining_matches",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'served', 'annulled')",
+            name="ck_player_sanctions_status",
+        ),
+        CheckConstraint(
+            "(status = 'active' AND remaining_matches > 0 "
+            "AND served_at IS NULL AND annulled_at IS NULL "
+            "AND annulled_by_user_id IS NULL) OR "
+            "(status = 'served' AND remaining_matches = 0 "
+            "AND served_at IS NOT NULL AND annulled_at IS NULL "
+            "AND annulled_by_user_id IS NULL) OR "
+            "(status = 'annulled' AND annulled_at IS NOT NULL "
+            "AND annulled_by_user_id IS NOT NULL AND served_at IS NULL)",
+            name="ck_player_sanctions_lifecycle",
+        ),
+        UniqueConstraint("id", "player_id", name="uq_player_sanctions_id_player"),
+        Index(
+            "ix_player_sanctions_player_status_created_at",
+            "player_id",
+            "status",
+            "created_at",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "players.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanctions_player_id_players",
+        ),
+        nullable=False,
+    )
+    source_match_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "matches.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanctions_source_match_id_matches",
+        ),
+        nullable=False,
+    )
+    title = db.Column(db.String(30), nullable=False)
+    reason = db.Column(db.String(250), nullable=False)
+    suspension_matches = db.Column(db.Integer, nullable=False)
+    remaining_matches = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="active")
+    effective_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    created_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanctions_created_by_user_id_users",
+        ),
+        nullable=False,
+    )
+    updated_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanctions_updated_by_user_id_users",
+        ),
+        nullable=False,
+    )
+    annulled_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanctions_annulled_by_user_id_users",
+        ),
+        nullable=True,
+    )
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+    annulled_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    served_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    player = db.relationship("Player", back_populates="sanctions")
+    source_match = db.relationship("Match", back_populates="sanctions")
+    created_by = db.relationship(
+        "User",
+        foreign_keys=[created_by_user_id],
+        back_populates="created_sanctions",
+    )
+    updated_by = db.relationship(
+        "User",
+        foreign_keys=[updated_by_user_id],
+        back_populates="updated_sanctions",
+    )
+    annulled_by = db.relationship(
+        "User",
+        foreign_keys=[annulled_by_user_id],
+        back_populates="annulled_sanctions",
+    )
+    frozen_team_entries = db.relationship(
+        "PlayerSanctionTeam",
+        back_populates="sanction",
+        cascade="all, delete-orphan",
+        order_by="PlayerSanctionTeam.team_id",
+    )
+
+
+class PlayerSanctionTeam(db.Model):
+    __tablename__ = "player_sanction_teams"
+
+    sanction_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "player_sanctions.id",
+            ondelete="CASCADE",
+            name="fk_player_sanction_teams_sanction_id_player_sanctions",
+        ),
+        primary_key=True,
+    )
+    team_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "teams.id",
+            ondelete="RESTRICT",
+            name="fk_player_sanction_teams_team_id_teams",
+        ),
+        primary_key=True,
+    )
+
+    sanction = db.relationship(
+        "PlayerSanction", back_populates="frozen_team_entries"
+    )
+    team = db.relationship("Team", back_populates="sanction_team_entries")

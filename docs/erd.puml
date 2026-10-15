@@ -125,6 +125,34 @@ entity "matches" as matches {
   UQ (competition_id, round_number, referee_id)
 }
 
+entity "player_sanctions" as player_sanctions {
+  * id : INTEGER <<PK>>
+  --
+  * player_id : INTEGER <<FK>>
+  * source_match_id : INTEGER <<FK>>
+  * title : VARCHAR(30) <<CHECK>>
+  * reason : VARCHAR(250) <<CHECK>>
+  * suspension_matches : INTEGER <<CHECK>>
+  * remaining_matches : INTEGER <<CHECK>>
+  * status : VARCHAR(20) <<CHECK>>
+  * effective_at : TIMESTAMPTZ
+  * created_by_user_id : INTEGER <<FK>>
+  * updated_by_user_id : INTEGER <<FK>>
+  annulled_by_user_id : INTEGER <<FK>>
+  * created_at : TIMESTAMPTZ
+  * updated_at : TIMESTAMPTZ
+  annulled_at : TIMESTAMPTZ
+  served_at : TIMESTAMPTZ
+  --
+  UQ (id, player_id)
+  IX (player_id, status, created_at)
+}
+
+entity "player_sanction_teams" as player_sanction_teams {
+  * sanction_id : INTEGER <<PK, FK>>
+  * team_id : INTEGER <<PK, FK>>
+}
+
 users ||--o{ auth_sessions : owns
 sports ||--o{ teams : classifies
 sports ||--o{ players : classifies
@@ -142,6 +170,11 @@ competitions ||--o{ matches : schedules
 teams ||--o{ matches : team_1
 teams ||--o{ matches : team_2
 users ||--o{ matches : officiates
+players ||--o{ player_sanctions : receives
+matches ||--o{ player_sanctions : originates
+users ||--o{ player_sanctions : creates/updates/annuls
+player_sanctions ||--|{ player_sanction_teams : freezes
+teams ||--o{ player_sanction_teams : snapshots
 
 note right of users
   role IN ('administrator', 'referee')
@@ -210,6 +243,21 @@ note right of matches
   no repeated opponent (service rule)
   schedule is null/incomplete or a valid interval
   Team/referee overlaps are rejected globally
+end note
+
+note right of player_sanctions
+  global suspension created only from an in-progress Match
+  effective_at snapshots source Match ends_at
+  status IN ('active', 'served', 'annulled')
+  duration is 1..10; remaining is 0..duration
+  lifecycle/audit consistency is enforced by CHECK
+  Player, Match and audit User deletion is restricted
+end note
+
+note right of player_sanction_teams
+  immutable frozen Team union at sanction creation
+  sanction cleanup may cascade only from internal physical cleanup
+  Team deletion is restricted
 end note
 
 @enduml

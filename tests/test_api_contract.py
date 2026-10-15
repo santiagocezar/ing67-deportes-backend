@@ -564,6 +564,7 @@ class ApiContractTests(unittest.TestCase):
                 "/competitions/{competition_id}/matches",
                 "/competitions/{competition_id}/matches/randomize",
                 "/matches/{match_id}",
+                "/matches/{match_id}/players/{player_id}/sanctions",
                 "/referees",
             },
         )
@@ -574,8 +575,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 38)
-        self.assertEqual(len(set(operation_ids)), 38)
+        self.assertEqual(len(operation_ids), 39)
+        self.assertEqual(len(set(operation_ids)), 39)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -611,6 +612,9 @@ class ApiContractTests(unittest.TestCase):
             contract["components"]["schemas"],
         )
         self.assertIn("MatchResponse", contract["components"]["schemas"])
+        self.assertIn(
+            "PlayerSanctionResponse", contract["components"]["schemas"]
+        )
         self.assertIn(
             "RefereeListResponse",
             contract["components"]["schemas"],

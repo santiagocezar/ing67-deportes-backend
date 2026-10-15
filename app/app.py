@@ -161,6 +161,7 @@ def create_app(
     from .routes.player_photos import player_photos_bp
     from .routes.players import players_bp
     from .routes.referees import referees_bp
+    from .routes.sanctions import sanctions_bp
     from .routes.sports import sports_bp
     from .routes.teams import teams_bp
     from .routes.users import auth_bp
@@ -180,6 +181,7 @@ def create_app(
     flask_app.register_api(player_photos_bp)
     flask_app.register_api(competitions_bp)
     flask_app.register_api(matches_bp)
+    flask_app.register_api(sanctions_bp)
     flask_app.register_api(referees_bp)
 
     if docs_enabled:
