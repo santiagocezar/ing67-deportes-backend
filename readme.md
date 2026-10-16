@@ -119,8 +119,11 @@ incluye su consulta paginada, edición controlada y anulación administrativa; a
 `upgrade-db` antes de usar la gestión de sanciones.
 
 La migración `a3c4e5f6a7b8` agrega el historial inmutable de escaneos de plantel,
-sus caras detectadas y las instantáneas de sanciones aplicables. No agrega todavía un
-endpoint de procesamiento ni reconocimiento facial.
+sus caras detectadas y las instantáneas de sanciones aplicables. El procesamiento se
+publica en `POST /matches/{match_id}/teams/{team_id}/roster-scans`: recibe una imagen
+grupal PNG/JPEG de hasta 10 MiB y puede retenerla en `MATCH_SCAN_PHOTOS_DIR` sólo si
+el resultado contiene una cara desconocida. Aplicar la migración antes de usar el
+endpoint y ejecutar la reconciliación documentada tras una interrupción de escritura.
 
 ## Carga de deportes iniciales
 

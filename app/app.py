@@ -77,9 +77,9 @@ def create_app(
         )
     )
     from .services.player_photos import (
-        MAX_PLAYER_PHOTO_BYTES,
         MULTIPART_OVERHEAD_BYTES,
     )
+    from .services.match_roster_scan_processing import MAX_SCAN_IMAGE_BYTES
 
     flask_app = OpenAPI(
         __name__,
@@ -120,9 +120,7 @@ def create_app(
         JWT_REFRESH_TOKEN_EXPIRES=timedelta(days=30),
         JWT_TOKEN_LOCATION=["headers"],
         API_DOCS_ENABLED=docs_enabled,
-        MAX_CONTENT_LENGTH=(
-            MAX_PLAYER_PHOTO_BYTES + MULTIPART_OVERHEAD_BYTES
-        ),
+        MAX_CONTENT_LENGTH=(MAX_SCAN_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES),
         PLAYER_PHOTOS_DIR=os.getenv("PLAYER_PHOTOS_DIR")
         or str(Path(flask_app.instance_path) / "player_photos"),
         MATCH_SCAN_PHOTOS_DIR=os.getenv("MATCH_SCAN_PHOTOS_DIR")
@@ -131,7 +129,7 @@ def create_app(
     flask_app.config.update(overrides)
     # The business limit is not an environment-specific tuning option.
     flask_app.config["MAX_CONTENT_LENGTH"] = (
-        MAX_PLAYER_PHOTO_BYTES + MULTIPART_OVERHEAD_BYTES
+        MAX_SCAN_IMAGE_BYTES + MULTIPART_OVERHEAD_BYTES
     )
 
     db.init_app(flask_app)
@@ -161,6 +159,7 @@ def create_app(
     from .models import ADMIN_USER_ROLE
     from .routes.competitions import competitions_bp
     from .routes.matches import matches_bp
+    from .routes.match_roster_scans import match_roster_scans_bp
     from .routes.player_photos import player_photos_bp
     from .routes.players import players_bp
     from .routes.referees import referees_bp
@@ -187,6 +186,7 @@ def create_app(
     flask_app.register_api(player_photos_bp)
     flask_app.register_api(competitions_bp)
     flask_app.register_api(matches_bp)
+    flask_app.register_api(match_roster_scans_bp)
     flask_app.register_api(sanctions_bp)
     flask_app.register_api(referees_bp)
 
@@ -242,6 +242,12 @@ def create_app(
             return error_response(
                 "photo_too_large",
                 "Each photo must be at most 5 MB.",
+                413,
+            )
+        if request.method == "POST" and request.path.endswith("/roster-scans"):
+            return error_response(
+                "scan_image_too_large",
+                "The group image must be at most 10 MiB.",
                 413,
             )
         return error_response(

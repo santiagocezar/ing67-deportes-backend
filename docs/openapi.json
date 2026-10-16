@@ -552,6 +552,212 @@
         "title": "MatchResponse",
         "type": "object"
       },
+      "MatchRosterScanFaceResponse": {
+        "properties": {
+          "bottom": {
+            "title": "Bottom",
+            "type": "integer"
+          },
+          "face_index": {
+            "title": "Face Index",
+            "type": "integer"
+          },
+          "left": {
+            "title": "Left",
+            "type": "integer"
+          },
+          "match_percentage": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Percentage"
+          },
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "player_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Name"
+          },
+          "right": {
+            "title": "Right",
+            "type": "integer"
+          },
+          "sanctions": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanSanctionResponse"
+            },
+            "title": "Sanctions",
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "declared_eligible",
+              "declared_sanctioned",
+              "team_member_undeclared",
+              "team_member_undeclared_sanctioned",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "top": {
+            "title": "Top",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "face_index",
+          "top",
+          "right",
+          "bottom",
+          "left",
+          "status",
+          "player_id",
+          "player_name",
+          "match_percentage",
+          "sanctions"
+        ],
+        "title": "MatchRosterScanFaceResponse",
+        "type": "object"
+      },
+      "MatchRosterScanResponse": {
+        "properties": {
+          "count_warning": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recognized_player_count_below_expected",
+                  "recognized_player_count_above_expected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count Warning"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "title": "Created By User Id",
+            "type": "integer"
+          },
+          "detected_faces": {
+            "title": "Detected Faces",
+            "type": "integer"
+          },
+          "expected_players": {
+            "title": "Expected Players",
+            "type": "integer"
+          },
+          "faces": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanFaceResponse"
+            },
+            "title": "Faces",
+            "type": "array"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "match_id": {
+            "title": "Match Id",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "integer"
+          },
+          "unique_recognized_players": {
+            "title": "Unique Recognized Players",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "match_id",
+          "team_id",
+          "created_by_user_id",
+          "expected_players",
+          "detected_faces",
+          "unique_recognized_players",
+          "count_warning",
+          "created_at",
+          "faces"
+        ],
+        "title": "MatchRosterScanResponse",
+        "type": "object"
+      },
+      "MatchRosterScanSanctionResponse": {
+        "properties": {
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "remaining_matches": {
+            "title": "Remaining Matches",
+            "type": "integer"
+          },
+          "sanction_id": {
+            "title": "Sanction Id",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sanction_id",
+          "title",
+          "reason",
+          "remaining_matches"
+        ],
+        "title": "MatchRosterScanSanctionResponse",
+        "type": "object"
+      },
+      "MatchRosterScanUploadForm": {
+        "additionalProperties": false,
+        "properties": {
+          "photo": {
+            "description": "One PNG or JPEG group image of at most 10 MiB, between 320 and 4096 pixels per side, with no more than 12000000 total pixels.",
+            "format": "binary",
+            "title": "Photo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "photo"
+        ],
+        "title": "MatchRosterScanUploadForm",
+        "type": "object"
+      },
       "MatchUpdateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3595,6 +3801,155 @@
         ]
       }
     },
+    "/matches/{match_id}/teams/{team_id}/roster-scans": {
+      "post": {
+        "description": "Detects and compares faces only against enabled current members of the selected Match Team. Embeddings are never stored or returned. A group image is retained privately only if a result is unknown.",
+        "operationId": "matchRosterScansProcess",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRosterScanUploadForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanResponse"
+                }
+              }
+            },
+            "description": "Created"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Process a protected Match roster scan",
+        "tags": [
+          "Roster Scans"
+        ]
+      }
+    },
     "/players": {
       "get": {
         "description": "Returns filtered, sorted, and paginated Players. Enabled Players are returned by default and pages contain at most 25 records.",
@@ -6377,6 +6732,10 @@
     {
       "description": "Random Competition draws and Match scheduling.",
       "name": "Matches"
+    },
+    {
+      "description": "Protected Match roster recognition and immutable results.",
+      "name": "Roster Scans"
     },
     {
       "description": "Create, query, and manage global Player suspensions.",

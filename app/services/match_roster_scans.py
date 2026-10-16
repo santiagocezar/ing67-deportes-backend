@@ -13,6 +13,7 @@ from ..models import (
     MatchRosterScan,
     MatchRosterScanFace,
     MatchRosterScanFaceSanction,
+    Team,
 )
 from .competition_state import utc_now
 from .match_scan_photo_files import (
@@ -219,6 +220,35 @@ def _authorize_scan(match: Match, actor_user_id: int, actor_role: str) -> None:
     )
 
 
+def validate_match_roster_scan_target(
+    match_id: int,
+    team_id: int,
+    *,
+    actor_user_id: int,
+    actor_role: str,
+) -> Match:
+    """Lock and validate a Match/Team target before recognition reads data."""
+    match = _lock_match(match_id)
+    _validate_match_window(match)
+    _authorize_scan(match, actor_user_id, actor_role)
+    if team_id not in (match.team_1_id, match.team_2_id):
+        raise MatchRosterScanServiceError(
+            "scan_team_not_in_match",
+            "The selected Team is not part of this Match.",
+            409,
+        )
+    team = db.session.execute(
+        db.select(Team)
+        .where(Team.id == team_id)
+        .with_for_update(of=Team)
+    ).scalar_one_or_none()
+    if team is None:
+        raise MatchRosterScanServiceError(
+            "scan_team_not_found", "The selected Team does not exist.", 404
+        )
+    return match
+
+
 def _validate_match_window(match: Match) -> None:
     now = utc_now()
     reconcile_matches(now, match_id=match.id)
@@ -267,15 +297,12 @@ def record_match_roster_scan(
 
     scan_id: int | None = None
     try:
-        match = _lock_match(match_id)
-        _validate_match_window(match)
-        _authorize_scan(match, actor_user_id, actor_role)
-        if team_id not in (match.team_1_id, match.team_2_id):
-            raise MatchRosterScanServiceError(
-                "scan_team_not_in_match",
-                "The selected Team is not part of this Match.",
-                422,
-            )
+        match = validate_match_roster_scan_target(
+            match_id,
+            team_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+        )
 
         recognized_player_ids = {
             face.player_id

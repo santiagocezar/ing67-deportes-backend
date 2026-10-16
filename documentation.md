@@ -48,9 +48,9 @@ Los objetos de entrada rechazan campos desconocidos.
 - `422 Unprocessable Content`: el JSON es un objeto válido, pero faltan campos o sus
   tipos, valores o nombres no cumplen el esquema.
 
-La carga de fotos es la única operación que recibe `multipart/form-data` en lugar de
-JSON: responde `400` si el cuerpo no declara ese tipo y `422` si el formulario no
-cumple su esquema.
+Las cargas de fotos base y de escaneos de plantel reciben `multipart/form-data` en
+lugar de JSON: responden `400` si el cuerpo no declara ese tipo y `422` si el
+formulario no cumple su esquema.
 
 Ejemplo de `422`:
 
@@ -645,6 +645,55 @@ galería y las operaciones de gestión continúan usando el cliente autenticado.
 
 El disco local presupone una única instancia persistente del backend. No se admite un
 despliegue con réplicas, filesystem efímero ni almacenamiento distribuido en esta etapa.
+
+## Procesamiento de escaneos de plantel
+
+```http
+POST /matches/{match_id}/teams/{team_id}/roster-scans
+Authorization: Bearer <access-token>
+Content-Type: multipart/form-data
+```
+
+La solicitud tiene exactamente un archivo, `photo`; campos adicionales o partes
+repetidas responden `422 validation_error`. Un administrador puede escanear cualquiera
+de los equipos del partido y un árbitro sólo un partido que tenga asignado. El partido
+debe estar `in_progress` o haber terminado hace como máximo dos horas; los demás
+estados, un equipo ajeno o una ventana vencida responden `409` sin escribir datos.
+
+La imagen debe contener bytes PNG o JPEG reales, medir entre 320 y 4096 píxeles por
+lado, no superar 12.000.000 píxeles ni 10 MiB. Se inspecciona el encabezado antes de la
+decodificación completa. La detección HOG debe encontrar al menos una cara y cada una
+debe medir como mínimo 160×160 píxeles. Una imagen sin caras, dañada o de calidad
+insuficiente responde `422 image_not_processable` con uno de los detalles
+`no_detectable_faces`, `invalid_image` o `image_quality_insufficient`; no conserva
+archivo ni fila de escaneo. Un tipo distinto responde `415 unsupported_image_format` y
+un cuerpo o archivo superior al límite responde `413 scan_image_too_large`.
+
+Para cada cara se generan embeddings solamente en memoria y se compara exclusivamente
+contra jugadores habilitados que hoy pertenecen al equipo elegido y tienen foto base
+legible. Por jugador se utiliza la menor distancia entre todas sus fotos; una identidad
+requiere distancia `<= 0.60` y una ventaja de al menos `0.05` frente al segundo jugador
+distinto. Los embeddings, distancias y nombres internos de archivo no se registran ni
+se devuelven. `match_percentage` es únicamente la presentación redondeada de
+`clamp((1 - distance) * 100, 0, 100)`.
+
+Cada resultado queda inmutable y es uno de `declared_eligible`,
+`declared_sanctioned`, `team_member_undeclared`,
+`team_member_undeclared_sanctioned` o `unknown`. La elegibilidad usa el plantel
+histórico de la competición y las sanciones tal como aplicaban antes de iniciar el
+partido; las instantáneas de sanción se guardan junto al resultado. Distancias
+ambiguas, candidatos fuera de umbral, jugadores sin fotos candidatas y una identidad
+repetida en la misma imagen terminan como `unknown`.
+
+La respuesta `201` incluye el escaneo, cajas, estado, jugador reconocido, porcentaje y
+snapshots de sanciones, pero nunca embeddings ni la referencia privada de imagen. Si
+la cantidad de jugadores reconocidos distintos difiere de `expected_players` (la
+capacidad en cancha del deporte), retorna `count_warning`; no infiere quién falta ni
+quién sobra. Si hay alguna cara `unknown`, la imagen grupal se guarda de manera privada
+en `MATCH_SCAN_PHOTOS_DIR`; nunca se expone por HTTP. Una falla de base de datos,
+dependencia facial o almacenamiento responde `503 scan_processing_unavailable` y deja
+sin filas ni archivos el intento completo. No hay interfaz de cámara ni resolución
+manual en este alcance.
 
 ## Sanciones globales de jugadores
 

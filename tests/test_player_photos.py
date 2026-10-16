@@ -971,9 +971,12 @@ class PlayerPhotoApiTests(unittest.TestCase):
         )
         service.assert_not_called()
 
-    def test_oversized_request_is_rejected_before_it_is_parsed(self):
+    def test_oversized_base_photo_keeps_its_five_megabyte_service_limit(self):
         oversized = b"\0" * (MAX_PLAYER_PHOTO_BYTES + 65 * 1024)
-        with patch("app.routes.player_photos.add_player_photo") as service:
+        with patch(
+            "app.routes.player_photos.add_player_photo",
+            side_effect=PhotoTooLargeError(),
+        ) as service:
             response = self._upload({"photo": (oversized, "huge.png")})
 
         self.assertEqual(response.status_code, 413)
@@ -984,7 +987,11 @@ class PlayerPhotoApiTests(unittest.TestCase):
                 "message": "Each photo must be at most 5 MB.",
             },
         )
-        service.assert_not_called()
+        service.assert_called_once_with(
+            1,
+            file_name="huge.png",
+            content=oversized,
+        )
 
     def test_rejected_files_explain_the_reason_and_are_not_stored(self):
         cases = (
