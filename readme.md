@@ -65,17 +65,28 @@ backend; no funciona correctamente con réplicas que no compartan el mismo files
 con discos efímeros. Cada jugador habilitado conserva como máximo tres fotos y al
 deshabilitarlo se eliminan de forma permanente.
 
+Las imágenes grupales retenidas de escaneos de plantel usan `MATCH_SCAN_PHOTOS_DIR`
+(por defecto `instance/match_scan_photos`) y nunca se publican mediante una ruta HTTP.
+Sólo se guarda una imagen cuando el resultado terminado contiene al menos una cara
+desconocida. Esta carpeta tiene la misma limitación: una única instancia persistente y
+respaldos coordinados con PostgreSQL.
+
 Si el proceso se interrumpe durante una escritura o eliminación, detener todas las
 instancias del backend y ejecutar:
 
 ```powershell
 python -m flask --app app reconcile-player-photos
+python -m flask --app app reconcile-match-scan-photos
 ```
 
 El comando es idempotente: promueve archivos `.pending` con fila confirmada, restaura
 `.deleting` cuya fila todavía existe, elimina estados y archivos huérfanos e informa
 filas sin archivo. Debe ejecutarse con el mismo `PLAYER_PHOTOS_DIR` y la misma base que
 la aplicación.
+
+El segundo comando reconcilia las escrituras pendientes de imágenes privadas de
+escaneo y elimina archivos huérfanos. Detener todas las instancias antes de ejecutar
+cualquiera de los comandos y usar la misma `MATCH_SCAN_PHOTOS_DIR` y base de datos.
 
 ## Preparación de la base de datos
 
@@ -106,6 +117,10 @@ Las migraciones `e1f4c8a2b6d0` y `f2a3b4c5d6e7` incorporan las sanciones globale
 sus equipos congelados y el historial de consumo auditable. La aplicación también
 incluye su consulta paginada, edición controlada y anulación administrativa; aplicar
 `upgrade-db` antes de usar la gestión de sanciones.
+
+La migración `a3c4e5f6a7b8` agrega el historial inmutable de escaneos de plantel,
+sus caras detectadas y las instantáneas de sanciones aplicables. No agrega todavía un
+endpoint de procesamiento ni reconocimiento facial.
 
 ## Carga de deportes iniciales
 

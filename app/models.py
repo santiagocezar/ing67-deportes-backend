@@ -181,6 +181,11 @@ class Team(db.Model):
         back_populates="team",
         passive_deletes=True,
     )
+    roster_scans = db.relationship(
+        "MatchRosterScan",
+        back_populates="team",
+        passive_deletes=True,
+    )
 
 
 class Player(db.Model):
@@ -254,6 +259,11 @@ class Player(db.Model):
         back_populates="player",
         passive_deletes=True,
         order_by="PlayerSanction.created_at.desc()",
+    )
+    roster_scan_faces = db.relationship(
+        "MatchRosterScanFace",
+        back_populates="player",
+        passive_deletes=True,
     )
 
 
@@ -348,6 +358,11 @@ class User(db.Model):
         "PlayerSanction",
         foreign_keys="PlayerSanction.annulled_by_user_id",
         back_populates="annulled_by",
+        passive_deletes=True,
+    )
+    created_roster_scans = db.relationship(
+        "MatchRosterScan",
+        back_populates="created_by",
         passive_deletes=True,
     )
 
@@ -726,6 +741,226 @@ class Match(db.Model):
         back_populates="match",
         passive_deletes=True,
     )
+    roster_scans = db.relationship(
+        "MatchRosterScan",
+        back_populates="match",
+        passive_deletes=True,
+        order_by="MatchRosterScan.created_at",
+    )
+
+
+SCAN_FACE_STATUSES = (
+    "declared_eligible",
+    "declared_sanctioned",
+    "team_member_undeclared",
+    "team_member_undeclared_sanctioned",
+    "unknown",
+)
+RECOGNIZED_SCAN_FACE_STATUSES = SCAN_FACE_STATUSES[:-1]
+
+
+class MatchRosterScan(db.Model):
+    """Immutable persisted result of one completed Match roster scan."""
+
+    __tablename__ = "match_roster_scans"
+    __table_args__ = (
+        CheckConstraint(
+            "expected_players >= 0",
+            name="ck_match_roster_scans_expected_players_nonnegative",
+        ),
+        CheckConstraint(
+            "detected_faces >= 0",
+            name="ck_match_roster_scans_detected_faces_nonnegative",
+        ),
+        CheckConstraint(
+            "unique_recognized_players >= 0",
+            name=(
+                "ck_match_roster_scans_unique_recognized_players_nonnegative"
+            ),
+        ),
+        CheckConstraint(
+            "(group_image_file_name IS NULL AND "
+            "group_image_content_type IS NULL) OR "
+            "(group_image_file_name IS NOT NULL AND "
+            "group_image_content_type IS NOT NULL)",
+            name="ck_match_roster_scans_group_image_pair",
+        ),
+        UniqueConstraint(
+            "group_image_file_name",
+            name="uq_match_roster_scans_group_image_file_name",
+        ),
+        Index("ix_match_roster_scans_match_id", "match_id"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    match_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "matches.id",
+            ondelete="RESTRICT",
+            name="fk_match_roster_scans_match_id_matches",
+        ),
+        nullable=False,
+    )
+    team_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "teams.id",
+            ondelete="RESTRICT",
+            name="fk_match_roster_scans_team_id_teams",
+        ),
+        nullable=False,
+    )
+    created_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_match_roster_scans_created_by_user_id_users",
+        ),
+        nullable=False,
+    )
+    expected_players = db.Column(db.Integer, nullable=False)
+    detected_faces = db.Column(db.Integer, nullable=False)
+    unique_recognized_players = db.Column(db.Integer, nullable=False)
+    group_image_file_name = db.Column(db.String(64), nullable=True)
+    group_image_content_type = db.Column(db.String(127), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    match = db.relationship("Match", back_populates="roster_scans")
+    team = db.relationship("Team", back_populates="roster_scans")
+    created_by = db.relationship("User", back_populates="created_roster_scans")
+    faces = db.relationship(
+        "MatchRosterScanFace",
+        back_populates="scan",
+        cascade="all, delete-orphan",
+        order_by="MatchRosterScanFace.face_index",
+    )
+
+
+class MatchRosterScanFace(db.Model):
+    """One immutable detected-face outcome within a roster scan."""
+
+    __tablename__ = "match_roster_scan_faces"
+    __table_args__ = (
+        CheckConstraint("face_index >= 0", name="ck_match_roster_scan_faces_index"),
+        CheckConstraint("top >= 0", name="ck_match_roster_scan_faces_top"),
+        CheckConstraint("right >= 0", name="ck_match_roster_scan_faces_right"),
+        CheckConstraint("bottom >= 0", name="ck_match_roster_scan_faces_bottom"),
+        CheckConstraint("left >= 0", name="ck_match_roster_scan_faces_left"),
+        CheckConstraint(
+            "right > left AND bottom > top",
+            name="ck_match_roster_scan_faces_box_order",
+        ),
+        CheckConstraint(
+            "match_percentage IS NULL OR match_percentage BETWEEN 0 AND 100",
+            name="ck_match_roster_scan_faces_percentage_range",
+        ),
+        CheckConstraint(
+            "status IN ('declared_eligible', 'declared_sanctioned', "
+            "'team_member_undeclared', "
+            "'team_member_undeclared_sanctioned', 'unknown')",
+            name="ck_match_roster_scan_faces_status",
+        ),
+        CheckConstraint(
+            "(status = 'unknown' AND player_id IS NULL AND "
+            "player_name_snapshot IS NULL AND match_percentage IS NULL) OR "
+            "(status <> 'unknown' AND player_id IS NOT NULL AND "
+            "match_percentage IS NOT NULL)",
+            name="ck_match_roster_scan_faces_recognition_fields",
+        ),
+        UniqueConstraint(
+            "scan_id",
+            "face_index",
+            "player_id",
+            name="uq_match_roster_scan_faces_identity",
+        ),
+        Index("ix_match_roster_scan_faces_player_id", "player_id"),
+    )
+
+    scan_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "match_roster_scans.id",
+            ondelete="CASCADE",
+            name="fk_match_roster_scan_faces_scan_id_scans",
+        ),
+        primary_key=True,
+    )
+    face_index = db.Column(db.Integer, primary_key=True)
+    top = db.Column(db.Integer, nullable=False)
+    right = db.Column(db.Integer, nullable=False)
+    bottom = db.Column(db.Integer, nullable=False)
+    left = db.Column(db.Integer, nullable=False)
+    player_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "players.id",
+            ondelete="RESTRICT",
+            name="fk_match_roster_scan_faces_player_id_players",
+        ),
+        nullable=True,
+    )
+    player_name_snapshot = db.Column(db.String(100), nullable=True)
+    match_percentage = db.Column(db.Integer, nullable=True)
+    status = db.Column(db.String(40), nullable=False)
+
+    scan = db.relationship("MatchRosterScan", back_populates="faces")
+    player = db.relationship("Player", back_populates="roster_scan_faces")
+    sanction_snapshots = db.relationship(
+        "MatchRosterScanFaceSanction",
+        back_populates="face",
+        cascade="all, delete-orphan",
+        order_by="MatchRosterScanFaceSanction.sanction_id",
+    )
+
+
+class MatchRosterScanFaceSanction(db.Model):
+    """Immutable sanction data applicable to a sanctioned scan outcome."""
+
+    __tablename__ = "match_roster_scan_face_sanctions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["scan_id", "face_index", "player_id"],
+            [
+                "match_roster_scan_faces.scan_id",
+                "match_roster_scan_faces.face_index",
+                "match_roster_scan_faces.player_id",
+            ],
+            name="fk_match_roster_scan_face_sanctions_face",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["sanction_id", "player_id"],
+            ["player_sanctions.id", "player_sanctions.player_id"],
+            name="fk_match_roster_scan_face_sanctions_sanction_player",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "char_length(trim(title_snapshot)) > 0",
+            name="ck_match_roster_scan_face_sanctions_title_not_blank",
+        ),
+        CheckConstraint(
+            "char_length(trim(reason_snapshot)) > 0",
+            name="ck_match_roster_scan_face_sanctions_reason_not_blank",
+        ),
+        CheckConstraint(
+            "remaining_matches_snapshot >= 0",
+            name="ck_match_roster_scan_face_sanctions_remaining_nonnegative",
+        ),
+    )
+
+    scan_id = db.Column(db.Integer, primary_key=True)
+    face_index = db.Column(db.Integer, primary_key=True)
+    sanction_id = db.Column(db.Integer, primary_key=True)
+    player_id = db.Column(db.Integer, nullable=False)
+    title_snapshot = db.Column(db.String(30), nullable=False)
+    reason_snapshot = db.Column(db.String(250), nullable=False)
+    remaining_matches_snapshot = db.Column(db.Integer, nullable=False)
+
+    face = db.relationship("MatchRosterScanFace", back_populates="sanction_snapshots")
 
 
 class PlayerSanction(db.Model):

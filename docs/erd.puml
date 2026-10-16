@@ -164,6 +164,47 @@ entity "player_sanction_match_consumptions" as player_sanction_match_consumption
   IX (match_id)
 }
 
+entity "match_roster_scans" as match_roster_scans {
+  * id : INTEGER <<PK>>
+  --
+  * match_id : INTEGER <<FK>>
+  * team_id : INTEGER <<FK>>
+  * created_by_user_id : INTEGER <<FK>>
+  * expected_players : INTEGER <<CHECK>>
+  * detected_faces : INTEGER <<CHECK>>
+  * unique_recognized_players : INTEGER <<CHECK>>
+  group_image_file_name : VARCHAR(64) <<UQ>>
+  group_image_content_type : VARCHAR(127)
+  * created_at : TIMESTAMPTZ
+}
+
+entity "match_roster_scan_faces" as match_roster_scan_faces {
+  * scan_id : INTEGER <<PK, FK>>
+  * face_index : INTEGER <<PK>>
+  --
+  * top : INTEGER <<CHECK>>
+  * right : INTEGER <<CHECK>>
+  * bottom : INTEGER <<CHECK>>
+  * left : INTEGER <<CHECK>>
+  player_id : INTEGER <<FK>>
+  player_name_snapshot : VARCHAR(100)
+  match_percentage : INTEGER <<CHECK>>
+  * status : VARCHAR(40) <<CHECK>>
+  --
+  UQ (scan_id, face_index, player_id)
+}
+
+entity "match_roster_scan_face_sanctions" as match_roster_scan_face_sanctions {
+  * scan_id : INTEGER <<PK, FK>>
+  * face_index : INTEGER <<PK, FK>>
+  * sanction_id : INTEGER <<PK, FK>>
+  --
+  * player_id : INTEGER <<FK>>
+  * title_snapshot : VARCHAR(30) <<CHECK>>
+  * reason_snapshot : VARCHAR(250) <<CHECK>>
+  * remaining_matches_snapshot : INTEGER <<CHECK>>
+}
+
 users ||--o{ auth_sessions : owns
 sports ||--o{ teams : classifies
 sports ||--o{ players : classifies
@@ -189,6 +230,13 @@ teams ||--o{ player_sanction_teams : snapshots
 player_sanctions ||--o{ player_sanction_match_consumptions : serves
 players ||--o{ player_sanction_match_consumptions : guards
 matches ||--o{ player_sanction_match_consumptions : canonical_group
+matches ||--o{ match_roster_scans : scanned
+teams ||--o{ match_roster_scans : selected_for_scan
+users ||--o{ match_roster_scans : records
+match_roster_scans ||--|{ match_roster_scan_faces : contains
+players ||--o{ match_roster_scan_faces : recognized_as
+match_roster_scan_faces ||--|{ match_roster_scan_face_sanctions : snapshots
+player_sanctions ||--o{ match_roster_scan_face_sanctions : references
 
 note right of users
   role IN ('administrator', 'referee')
@@ -279,6 +327,26 @@ note right of player_sanction_match_consumptions
   (sanction_id, player_id) references its owning sanction
   sanction cleanup may cascade only from internal physical cleanup
   Match deletion is restricted
+end note
+
+note right of match_roster_scans
+  immutable completed scan; Match, Team and User deletion is restricted
+  expected_players snapshots Sport.max_players_in_game
+  group image file reference and MIME type are paired
+  a service verifies selected Team is a Match side
+  group image is retained only when a face result is unknown
+end note
+
+note right of match_roster_scan_faces
+  stable face index and non-empty non-negative box
+  recognized states require Player and percentage (0..100)
+  unknown state has no recognition fields
+  status determines presentation colour; no colour is stored
+end note
+
+note right of match_roster_scan_face_sanctions
+  face and sanction identities use composite FKs
+  title, reason and remaining count are immutable snapshots
 end note
 
 @enduml

@@ -125,6 +125,8 @@ def create_app(
         ),
         PLAYER_PHOTOS_DIR=os.getenv("PLAYER_PHOTOS_DIR")
         or str(Path(flask_app.instance_path) / "player_photos"),
+        MATCH_SCAN_PHOTOS_DIR=os.getenv("MATCH_SCAN_PHOTOS_DIR")
+        or str(Path(flask_app.instance_path) / "match_scan_photos"),
     )
     flask_app.config.update(overrides)
     # The business limit is not an environment-specific tuning option.
@@ -169,6 +171,9 @@ def create_app(
     from .schemas.auth import SignupRequest
     from .services.auth import is_token_revoked
     from .services.player_photos import reconcile_player_photo_files
+    from .services.match_scan_photo_files import (
+        reconcile_match_scan_photo_files,
+    )
     from .services.users import (
         DuplicateEmailError,
         UserValidationError,
@@ -325,6 +330,18 @@ def create_app(
             db.session.rollback()
             raise click.ClickException(
                 "Player photo reconciliation could not be completed."
+            ) from error
+        click.echo(json.dumps(report.as_dict(), sort_keys=True))
+
+    @flask_app.cli.command("reconcile-match-scan-photos")
+    def reconcile_match_scan_photos_command() -> None:
+        """Repair recoverable Match scan image states after a stopped run."""
+        try:
+            report = reconcile_match_scan_photo_files()
+        except (OSError, SQLAlchemyError) as error:
+            db.session.rollback()
+            raise click.ClickException(
+                "Match scan image reconciliation could not be completed."
             ) from error
         click.echo(json.dumps(report.as_dict(), sort_keys=True))
 
