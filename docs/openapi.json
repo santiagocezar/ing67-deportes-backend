@@ -641,6 +641,54 @@
         "title": "MatchRosterScanFaceResponse",
         "type": "object"
       },
+      "MatchRosterScanListResponse": {
+        "properties": {
+          "pagination": {
+            "$ref": "#/components/schemas/MatchRosterScanPaginationResponse"
+          },
+          "roster_scans": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanResponse"
+            },
+            "title": "Roster Scans",
+            "type": "array"
+          }
+        },
+        "required": [
+          "roster_scans",
+          "pagination"
+        ],
+        "title": "MatchRosterScanListResponse",
+        "type": "object"
+      },
+      "MatchRosterScanPaginationResponse": {
+        "properties": {
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "per_page": {
+            "title": "Per Page",
+            "type": "integer"
+          },
+          "total_items": {
+            "title": "Total Items",
+            "type": "integer"
+          },
+          "total_pages": {
+            "title": "Total Pages",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "page",
+          "per_page",
+          "total_items",
+          "total_pages"
+        ],
+        "title": "MatchRosterScanPaginationResponse",
+        "type": "object"
+      },
       "MatchRosterScanResponse": {
         "properties": {
           "count_warning": {
@@ -3802,6 +3850,114 @@
       }
     },
     "/matches/{match_id}/teams/{team_id}/roster-scans": {
+      "get": {
+        "description": "Returns immutable scan snapshots for one Match Team, newest first. Group images, file references, raw image bytes, and embeddings are never returned.",
+        "operationId": "matchRosterScansList",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Team Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List protected Match roster scan history",
+        "tags": [
+          "Roster Scans"
+        ]
+      },
       "post": {
         "description": "Detects and compares faces only against enabled current members of the selected Match Team. Embeddings are never stored or returned. A group image is retained privately only if a result is unknown.",
         "operationId": "matchRosterScansProcess",
@@ -5282,6 +5438,95 @@
         "summary": "List referees",
         "tags": [
           "Referees"
+        ]
+      }
+    },
+    "/roster-scans/{scan_id}": {
+      "get": {
+        "description": "Returns one immutable scan snapshot. Group images, file references, raw image bytes, and embeddings are never returned.",
+        "operationId": "matchRosterScansGet",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Scan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Get a protected Match roster scan",
+        "tags": [
+          "Roster Scans"
         ]
       }
     },

@@ -695,6 +695,33 @@ dependencia facial o almacenamiento responde `503 scan_processing_unavailable` y
 sin filas ni archivos el intento completo. No hay interfaz de cámara ni resolución
 manual en este alcance.
 
+## Historial protegido de escaneos de plantel
+
+```http
+GET /matches/{match_id}/teams/{team_id}/roster-scans?page=1
+GET /roster-scans/{scan_id}
+Authorization: Bearer <access-token>
+```
+
+Un administrador puede consultar cualquier escaneo terminado. Un árbitro sólo puede
+consultar los escaneos de partidos que tiene asignados; un recurso existente fuera de
+esa asignación responde `403`. El listado vuelve a validar que el equipo sea uno de los
+dos lados del partido y devuelve `404` si falta el partido, el equipo o esa relación.
+
+El listado está ordenado de forma estable por `created_at DESC, id DESC`, usa páginas
+fijas de 25 elementos y devuelve `roster_scans` junto con `pagination` (`page`,
+`per_page`, `total_items`, `total_pages`). Una página sin resultados, incluso fuera del
+rango disponible, es válida y conserva esos metadatos. Las rutas y el parámetro `page`
+usan los contratos Pydantic habituales; valores inválidos responden `422`.
+
+El detalle y cada elemento del historial conservan el conteo esperado, detectado y
+reconocido, la advertencia de conteo no bloqueante, cajas de caras, identidad y nombre
+instantáneo cuando se reconoció un jugador, porcentaje, estado e instantáneas
+congeladas de sanciones. Nunca devuelven embeddings, referencias o URL de la imagen
+grupal, bytes de imagen, nombres internos de archivo ni detalles de la base. Una vista
+previa futura de un jugador reconocido debe usar la API ya existente de fotos del
+jugador; no forma parte ni altera este historial.
+
 ## Sanciones globales de jugadores
 
 La creación inicial de sanciones globales se realiza desde un partido que está en curso:

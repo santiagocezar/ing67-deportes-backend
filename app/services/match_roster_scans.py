@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Sequence
 
+from sqlalchemy import func
+from sqlalchemy.orm import joinedload, selectinload
+
 from ..extensions import db
 from ..models import (
     ADMIN_USER_ROLE,
@@ -27,6 +30,7 @@ from .matches import reconcile_matches
 SANCTIONED_SCAN_FACE_STATUSES = frozenset(
     {"declared_sanctioned", "team_member_undeclared_sanctioned"}
 )
+ROSTER_SCANS_PER_PAGE = 25
 
 
 class MatchRosterScanServiceError(Exception):
@@ -36,6 +40,15 @@ class MatchRosterScanServiceError(Exception):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class MatchRosterScanPage:
+    scans: list[MatchRosterScan]
+    page: int
+    per_page: int
+    total_items: int
+    total_pages: int
 
 
 @dataclass(frozen=True)
@@ -215,9 +228,111 @@ def _authorize_scan(match: Match, actor_user_id: int, actor_role: str) -> None:
         return
     raise MatchRosterScanServiceError(
         "scan_forbidden",
-        "Only an administrator or the assigned referee may record this scan.",
+        "Only an administrator or the assigned referee may access this scan.",
         403,
     )
+
+
+def _scan_read_options():
+    """Load immutable face snapshots without a query per face or sanction."""
+    return (
+        selectinload(MatchRosterScan.faces)
+        .joinedload(MatchRosterScanFace.player),
+        selectinload(MatchRosterScan.faces).selectinload(
+            MatchRosterScanFace.sanction_snapshots
+        ),
+    )
+
+
+def _get_readable_match(
+    match_id: int, *, actor_user_id: int, actor_role: str
+) -> Match:
+    match = db.session.execute(
+        db.select(Match).where(Match.id == match_id)
+    ).scalar_one_or_none()
+    if match is None:
+        raise MatchRosterScanServiceError(
+            "match_not_found", "The Match does not exist.", 404
+        )
+    _authorize_scan(match, actor_user_id, actor_role)
+    return match
+
+
+def _validate_readable_match_team(match: Match, team_id: int) -> None:
+    team = db.session.get(Team, team_id)
+    if team is None:
+        raise MatchRosterScanServiceError(
+            "scan_team_not_found", "The selected Team does not exist.", 404
+        )
+    if team_id not in (match.team_1_id, match.team_2_id):
+        raise MatchRosterScanServiceError(
+            "scan_team_not_in_match",
+            "The selected Team is not part of this Match.",
+            404,
+        )
+
+
+def list_match_roster_scans(
+    match_id: int,
+    team_id: int,
+    *,
+    page: int,
+    actor_user_id: int,
+    actor_role: str,
+) -> MatchRosterScanPage:
+    """Return a bounded historical page after Match-side authorization."""
+    match = _get_readable_match(
+        match_id, actor_user_id=actor_user_id, actor_role=actor_role
+    )
+    _validate_readable_match_team(match, team_id)
+    filters = (
+        MatchRosterScan.match_id == match.id,
+        MatchRosterScan.team_id == team_id,
+    )
+    total_items = db.session.execute(
+        db.select(func.count()).select_from(MatchRosterScan).where(*filters)
+    ).scalar_one()
+    total_pages = (
+        (total_items + ROSTER_SCANS_PER_PAGE - 1) // ROSTER_SCANS_PER_PAGE
+        if total_items
+        else 0
+    )
+    scans = list(
+        db.session.execute(
+            db.select(MatchRosterScan)
+            .options(*_scan_read_options())
+            .where(*filters)
+            .order_by(MatchRosterScan.created_at.desc(), MatchRosterScan.id.desc())
+            .limit(ROSTER_SCANS_PER_PAGE)
+            .offset((page - 1) * ROSTER_SCANS_PER_PAGE)
+        ).scalars()
+    )
+    return MatchRosterScanPage(
+        scans=scans,
+        page=page,
+        per_page=ROSTER_SCANS_PER_PAGE,
+        total_items=total_items,
+        total_pages=total_pages,
+    )
+
+
+def get_match_roster_scan(
+    scan_id: int, *, actor_user_id: int, actor_role: str
+) -> MatchRosterScan:
+    """Return one immutable scan only when its Match is readable by the actor."""
+    scan = db.session.execute(
+        db.select(MatchRosterScan)
+        .options(*_scan_read_options())
+        .where(MatchRosterScan.id == scan_id)
+    ).scalar_one_or_none()
+    if scan is None:
+        raise MatchRosterScanServiceError(
+            "roster_scan_not_found", "The roster scan does not exist.", 404
+        )
+    _get_readable_match(
+        scan.match_id, actor_user_id=actor_user_id, actor_role=actor_role
+    )
+    return scan
 
 
 def validate_match_roster_scan_target(

@@ -13,6 +13,10 @@ from ..extensions import db
 from ..schemas.common import ErrorResponse
 from ..schemas.match_roster_scans import (
     MatchRosterScanFaceResponse,
+    MatchRosterScanListQuery,
+    MatchRosterScanListResponse,
+    MatchRosterScanPaginationResponse,
+    MatchRosterScanPath,
     MatchRosterScanResponse,
     MatchRosterScanSanctionResponse,
     MatchRosterScanUploadForm,
@@ -23,7 +27,11 @@ from ..services.match_roster_scan_processing import (
     ScanProcessingUnavailableError,
     process_match_roster_scan,
 )
-from ..services.match_roster_scans import MatchRosterScanServiceError
+from ..services.match_roster_scans import (
+    MatchRosterScanServiceError,
+    get_match_roster_scan,
+    list_match_roster_scans,
+)
 from ..services.match_scan_photo_files import ScanImageStorageError
 from ..services.player_photo_files import PhotoStorageError
 from ..services.player_photos import PhotoProcessingUnavailableError
@@ -168,6 +176,89 @@ def _scan_response(scan) -> MatchRosterScanResponse:
             for face in scan.faces
         ],
     )
+
+
+@match_roster_scans_bp.get(
+    "/matches/<int:match_id>/teams/<int:team_id>/roster-scans",
+    summary="List protected Match roster scan history",
+    description=(
+        "Returns immutable scan snapshots for one Match Team, newest first. "
+        "Group images, file references, raw image bytes, and embeddings are "
+        "never returned."
+    ),
+    operation_id="matchRosterScansList",
+    security=ACCESS_SECURITY,
+    responses={
+        200: MatchRosterScanListResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@authenticated_user_required
+@validate_request()
+def get_match_roster_scan_history(
+    path: MatchTeamRosterScanPath,
+    query: MatchRosterScanListQuery,
+):
+    try:
+        result = list_match_roster_scans(
+            path.match_id,
+            path.team_id,
+            page=query.page,
+            actor_user_id=int(get_jwt_identity()),
+            actor_role=str(get_jwt().get("role", "")),
+        )
+    except MatchRosterScanServiceError as error:
+        return _service_error(error)
+    except SQLAlchemyError:
+        return _service_unavailable("list")
+    payload = MatchRosterScanListResponse(
+        roster_scans=[_scan_response(scan) for scan in result.scans],
+        pagination=MatchRosterScanPaginationResponse(
+            page=result.page,
+            per_page=result.per_page,
+            total_items=result.total_items,
+            total_pages=result.total_pages,
+        ),
+    )
+    return jsonify(payload.model_dump(mode="json")), 200
+
+
+@match_roster_scans_bp.get(
+    "/roster-scans/<int:scan_id>",
+    summary="Get a protected Match roster scan",
+    description=(
+        "Returns one immutable scan snapshot. Group images, file references, "
+        "raw image bytes, and embeddings are never returned."
+    ),
+    operation_id="matchRosterScansGet",
+    security=ACCESS_SECURITY,
+    responses={
+        200: MatchRosterScanResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@authenticated_user_required
+@validate_request()
+def get_roster_scan(path: MatchRosterScanPath):
+    try:
+        scan = get_match_roster_scan(
+            path.scan_id,
+            actor_user_id=int(get_jwt_identity()),
+            actor_role=str(get_jwt().get("role", "")),
+        )
+    except MatchRosterScanServiceError as error:
+        return _service_error(error)
+    except SQLAlchemyError:
+        return _service_unavailable("get")
+    return jsonify(_scan_response(scan).model_dump(mode="json")), 200
 
 
 @match_roster_scans_bp.post(

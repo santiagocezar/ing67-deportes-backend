@@ -23,7 +23,14 @@ from app.services.match_roster_scan_processing import (
     _validate_group_image,
     process_match_roster_scan,
 )
-from app.services.match_roster_scans import ScanFaceResult
+from app.services.match_roster_scans import (
+    MatchRosterScanServiceError,
+    ROSTER_SCANS_PER_PAGE,
+    ScanFaceResult,
+    _authorize_scan,
+    _scan_read_options,
+    list_match_roster_scans,
+)
 
 
 TEST_CONFIG = {
@@ -215,6 +222,186 @@ class MatchRosterScanRouteTests(unittest.TestCase):
         )
         self.assertNotIn("group_image_file_name", response_fields)
         self.assertNotIn("embedding", response_fields)
+
+    def test_lists_a_paginated_immutable_history_without_private_data(self):
+        page = SimpleNamespace(
+            scans=[_scan()],
+            page=2,
+            per_page=25,
+            total_items=26,
+            total_pages=2,
+        )
+        with patch(
+            "app.routes.match_roster_scans.list_match_roster_scans",
+            return_value=page,
+        ) as list_scans:
+            response = self.client.get(
+                "/matches/3/teams/2/roster-scans?page=2",
+                headers=self._bearer(self.admin_token),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            payload["pagination"],
+            {
+                "page": 2,
+                "per_page": 25,
+                "total_items": 26,
+                "total_pages": 2,
+            },
+        )
+        self.assertEqual(payload["roster_scans"][0]["id"], 7)
+        rendered = response.get_data(as_text=True)
+        self.assertNotIn("must-not-leak", rendered)
+        self.assertNotIn("embedding", rendered)
+        self.assertEqual(list_scans.call_args.kwargs["page"], 2)
+
+    def test_history_accepts_empty_or_out_of_range_pages_and_rejects_invalid_page(
+        self,
+    ):
+        empty_page = SimpleNamespace(
+            scans=[], page=3, per_page=25, total_items=26, total_pages=2
+        )
+        with patch(
+            "app.routes.match_roster_scans.list_match_roster_scans",
+            return_value=empty_page,
+        ) as list_scans:
+            empty = self.client.get(
+                "/matches/3/teams/2/roster-scans?page=3",
+                headers=self._bearer(self.admin_token),
+            )
+            invalid = self.client.get(
+                "/matches/3/teams/2/roster-scans?page=0",
+                headers=self._bearer(self.admin_token),
+            )
+
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.get_json()["roster_scans"], [])
+        self.assertEqual(empty.get_json()["pagination"]["total_pages"], 2)
+        self.assertEqual(invalid.status_code, 422)
+        list_scans.assert_called_once()
+
+    def test_history_detail_and_authorization_errors_use_safe_responses(self):
+        with patch(
+            "app.routes.match_roster_scans.get_match_roster_scan",
+            return_value=_scan(),
+        ) as get_scan:
+            detail = self.client.get(
+                "/roster-scans/7", headers=self._bearer(self.referee_token)
+            )
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.get_json()["id"], 7)
+        self.assertEqual(get_scan.call_args.kwargs["actor_role"], "referee")
+
+        cases = (
+            (
+                "/matches/3/teams/9/roster-scans",
+                "list_match_roster_scans",
+                MatchRosterScanServiceError(
+                    "scan_team_not_in_match",
+                    "The selected Team is not part of this Match.",
+                    404,
+                ),
+                404,
+            ),
+            (
+                "/roster-scans/8",
+                "get_match_roster_scan",
+                MatchRosterScanServiceError(
+                    "scan_forbidden",
+                    "The Match is not assigned to this referee.",
+                    403,
+                ),
+                403,
+            ),
+        )
+        for path, service_name, service_error, status in cases:
+            with self.subTest(path=path), patch(
+                f"app.routes.match_roster_scans.{service_name}",
+                side_effect=service_error,
+            ):
+                response = self.client.get(
+                    path, headers=self._bearer(self.referee_token)
+                )
+            self.assertEqual(response.status_code, status)
+            self.assertEqual(response.get_json()["error"]["code"], service_error.code)
+
+    def test_documents_history_operations_security_and_safe_response_fields(self):
+        contract = self.client.get("/openapi.json").get_json()
+        list_operation = contract["paths"][
+            "/matches/{match_id}/teams/{team_id}/roster-scans"
+        ]["get"]
+        detail_operation = contract["paths"]["/roster-scans/{scan_id}"]["get"]
+        self.assertEqual(list_operation["operationId"], "matchRosterScansList")
+        self.assertEqual(detail_operation["operationId"], "matchRosterScansGet")
+        self.assertEqual(list_operation["security"], [{"AccessTokenAuth": []}])
+        self.assertEqual(detail_operation["security"], [{"AccessTokenAuth": []}])
+        list_fields = set(
+            contract["components"]["schemas"]["MatchRosterScanListResponse"][
+                "properties"
+            ]
+        )
+        scan_fields = set(
+            contract["components"]["schemas"]["MatchRosterScanResponse"][
+                "properties"
+            ]
+        )
+        self.assertEqual(list_fields, {"roster_scans", "pagination"})
+        self.assertNotIn("group_image_file_name", scan_fields)
+        self.assertNotIn("group_image_content_type", scan_fields)
+        self.assertNotIn("embedding", scan_fields)
+
+
+class MatchRosterScanHistoryServiceTests(unittest.TestCase):
+    def test_read_authorization_allows_administrator_and_assigned_referee_only(
+        self,
+    ):
+        match = SimpleNamespace(referee_id=2)
+        _authorize_scan(match, actor_user_id=1, actor_role="administrator")
+        _authorize_scan(match, actor_user_id=2, actor_role="referee")
+        with self.assertRaisesRegex(
+            MatchRosterScanServiceError, "assigned referee"
+        ) as error:
+            _authorize_scan(match, actor_user_id=3, actor_role="referee")
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_history_load_options_prevent_per_face_or_per_sanction_queries(self):
+        self.assertEqual(len(_scan_read_options()), 2)
+
+    def test_history_uses_stable_bounded_query_and_reports_out_of_range_page(self):
+        match = SimpleNamespace(id=3, team_1_id=2, team_2_id=4, referee_id=2)
+        query_results = (
+            SimpleNamespace(scalar_one_or_none=lambda: match),
+            SimpleNamespace(scalar_one=lambda: 26),
+            SimpleNamespace(scalars=lambda: iter([])),
+        )
+        with (
+            patch(
+                "app.services.match_roster_scans.db.session.execute",
+                side_effect=query_results,
+            ) as execute,
+            patch(
+                "app.services.match_roster_scans.db.session.get",
+                return_value=SimpleNamespace(id=2),
+            ),
+        ):
+            result = list_match_roster_scans(
+                3,
+                2,
+                page=3,
+                actor_user_id=2,
+                actor_role="referee",
+            )
+
+        statement = execute.call_args_list[2].args[0]
+        self.assertEqual(result.scans, [])
+        self.assertEqual(result.total_pages, 2)
+        self.assertEqual(result.per_page, ROSTER_SCANS_PER_PAGE)
+        self.assertEqual(statement._limit_clause.value, ROSTER_SCANS_PER_PAGE)
+        self.assertEqual(statement._offset_clause.value, 2 * ROSTER_SCANS_PER_PAGE)
+        self.assertIn("created_at DESC", str(statement))
+        self.assertIn("id DESC", str(statement))
 
 
 class MatchRosterScanRecognitionTests(unittest.TestCase):

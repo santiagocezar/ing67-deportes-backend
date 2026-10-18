@@ -21,6 +21,7 @@ CountWarning = Literal[
     "recognized_player_count_above_expected",
 ]
 PositivePathId = Annotated[StrictInt, Field(gt=0)]
+PositiveQueryInteger = Annotated[int, Field(gt=0)]
 
 
 def _require_uploaded_file(value: object) -> UploadedFile:
@@ -35,6 +36,14 @@ def _require_uploaded_file(value: object) -> UploadedFile:
 class MatchTeamRosterScanPath(ApiRequest):
     match_id: PositivePathId
     team_id: PositivePathId
+
+
+class MatchRosterScanPath(ApiRequest):
+    scan_id: PositivePathId
+
+
+class MatchRosterScanListQuery(ApiRequest):
+    page: PositiveQueryInteger = 1
 
 
 class MatchRosterScanUploadForm(ApiRequest):
@@ -77,3 +86,15 @@ class MatchRosterScanResponse(ApiResponse):
     count_warning: CountWarning | None
     created_at: datetime
     faces: list[MatchRosterScanFaceResponse]
+
+
+class MatchRosterScanPaginationResponse(ApiResponse):
+    page: int
+    per_page: int
+    total_items: int
+    total_pages: int
+
+
+class MatchRosterScanListResponse(ApiResponse):
+    roster_scans: list[MatchRosterScanResponse]
+    pagination: MatchRosterScanPaginationResponse
