@@ -73,6 +73,7 @@ entity "player_photos" as player_photos {
   * player_id : INTEGER <<FK>>
   * file_name : VARCHAR(64) <<UQ>>
   * content_type : VARCHAR(20) <<CHECK>>
+  * is_initial_reference : BOOLEAN <<partial UQ>>
   * created_at : TIMESTAMPTZ
 }
 
@@ -275,6 +276,7 @@ note right of player_photos
   image file lives in PLAYER_PHOTOS_DIR, not in PostgreSQL
   file_name is a generated UUID plus .png or .jpg
   content_type IN ('image/jpeg', 'image/png')
+  at most one initial reference per Player
   PNG/JPG, max 5 MB, enabled Player (service rule)
   player deletion is restricted
 end note

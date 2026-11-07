@@ -125,6 +125,10 @@ grupal PNG/JPEG de hasta 10 MiB y puede retenerla en `MATCH_SCAN_PHOTOS_DIR` só
 el resultado contiene una cara desconocida. Aplicar la migración antes de usar el
 endpoint y ejecutar la reconciliación documentada tras una interrupción de escritura.
 
+La migración `d4e5f6a7b8c9` agrega la marca de referencia inicial de cada jugador:
+para fotos ya existentes selecciona de forma determinista la fila de menor ID. Aplicar
+`upgrade-db` antes de usar la validación de identidad en cargas posteriores.
+
 ## Carga de deportes iniciales
 
 Ejecutar el script desde la raíz del repositorio:

@@ -155,16 +155,18 @@ Team N ─────── N Player (mediante team_players)
 
 ### PlayerPhoto
 
-Una foto base expone `id`, `player_id`, `content_type` y `created_at`. `file_name` se
-conserva sólo para ubicar el archivo; no se acepta ni se devuelve.
+Una foto base expone `id`, `player_id`, `content_type`, `is_initial_reference` y
+`created_at`. `file_name` se conserva sólo para ubicar el archivo; no se acepta ni
+se devuelve.
 
 - La imagen se guarda como archivo en la carpeta local `PLAYER_PHOTOS_DIR`, fuera de
   PostgreSQL. La tabla guarda únicamente la referencia y los metadatos.
 - `file_name` es único y lo genera el backend (UUID más `.png` o `.jpg`). El nombre
   original del archivo subido no se usa ni se guarda.
 - `content_type` sólo admite `image/png` o `image/jpeg`.
-- Cada jugador habilitado puede conservar entre cero y tres fotos. El administrador
-  puede eliminar cualquiera, incluso la última.
+- Cada jugador habilitado puede conservar entre cero y tres fotos. La primera foto
+  aceptada queda marcada como `is_initial_reference: true`; las restantes valen
+  `false`. La referencia inicial sólo se puede eliminar si es la única foto actual.
 - Deshabilitar un jugador elimina definitivamente sus filas y archivos de fotos junto
   con sus asociaciones actuales a equipos. Habilitarlo no restaura ninguno.
 - La referencia al jugador usa `RESTRICT`: un jugador con fotos no puede eliminarse
@@ -530,9 +532,9 @@ misma transacción. Habilitar vuelve `disabled_at` a `null` y no restaura equipo
 fotos anteriores.
 
 Estas asociaciones representan membresía general de equipos, no planteles de una
-competición. Esta funcionalidad no implementa DNI, nacionalidad, comparación de
-identidades ni embeddings. La detección de un rostro durante la carga sólo valida la
-calidad mínima de las fotos base.
+competición. La carga de una segunda o tercera foto compara su identidad sólo con las
+fotos del mismo jugador, en memoria y sin persistir embeddings. No busca ni valida
+duplicados entre perfiles de jugadores distintos.
 
 ## Flujo y endpoints de fotos de jugadores
 
@@ -568,16 +570,21 @@ El archivo se valida en este orden:
    se rechaza.
 6. `face_recognition.face_locations` con el detector HOG y sus valores predeterminados
    debe encontrar exactamente un rostro, cuyo rectángulo mida al menos 160×160 píxeles.
-   Esta validación no genera embeddings ni compara identidades.
 
 El formato guardado sale del contenido, no del nombre: un PNG llamado `foto.jpg` se
 acepta y se guarda como PNG. Además, el jugador debe existir, estar habilitado y tener
-menos de tres fotos.
+menos de tres fotos. La primera foto no se compara y se convierte en la referencia
+inicial confiada al administrador. Cada foto posterior se codifica sólo en memoria y
+debe tener distancia mínima `<= 0.60` contra alguna foto existente de ese mismo
+jugador. No se consultan fotos de otros jugadores, no se guardan embeddings ni
+distancias, y el margen de ambigüedad de los escaneos de plantel no aplica a este único
+candidato de identidad.
 
-Después de validar, el backend escribe un archivo UUID con sufijo `.pending`, bloquea
-la fila del jugador con `FOR UPDATE`, vuelve a contar sus fotos, crea la fila y confirma
-la transacción. Sólo entonces renombra atómicamente el archivo a `.png` o `.jpg`. Ante
-un rollback se elimina el temporal; si el proceso cae entre estados, el comando de
+Después de validar, el backend bloquea la fila del jugador con `FOR UPDATE`, carga y
+bloquea sus fotos actuales, aplica el límite y la comparación cuando corresponde, y
+recién entonces escribe un archivo UUID con sufijo `.pending`. Crea la fila y confirma
+la transacción; sólo entonces renombra atómicamente el archivo a `.png` o `.jpg`.
+Ante un rollback se elimina el temporal; si el proceso cae entre estados, el comando de
 reconciliación documentado en el README permite reparar el resultado.
 
 La respuesta `201` devuelve directamente la foto creada:
@@ -587,6 +594,7 @@ La respuesta `201` devuelve directamente la foto creada:
   "id": 1,
   "player_id": 1,
   "content_type": "image/png",
+  "is_initial_reference": true,
   "created_at": "2026-09-26T12:00:00Z"
 }
 ```
@@ -600,6 +608,7 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 | `404` | `player_not_found` | El jugador no existe. |
 | `409` | `player_disabled` | El jugador está deshabilitado. |
 | `409` | `player_photo_limit_reached` | El jugador ya tiene tres fotos. |
+| `422` | `photo_identity_mismatch` | La foto válida no coincide con ninguna foto actual del jugador. |
 | `413` | `photo_too_large` | La foto, o el cuerpo completo de la solicitud, supera 5 MB. |
 | `415` | `unsupported_photo_format` | Extensión no permitida, como `.pdf` o `.svg`, o contenido que no es PNG ni JPEG. |
 | `422` | `invalid_photo` | Archivo vacío o dañado que no puede decodificarse. |
@@ -608,6 +617,7 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 | `422` | `face_too_small` | El rostro detectado mide menos de 160×160 píxeles. |
 | `422` | `validation_error` | Falta `photo`, no es un archivo, está repetido o hay campos extra. |
 | `503` | `photo_processing_unavailable` | No están disponibles las dependencias de validación facial. |
+| `503` | `photo_identity_validation_unavailable` | No se pudo leer o comparar de forma segura una referencia existente. |
 | `503` | `photo_storage_unavailable` | No se pudo escribir el archivo en disco. |
 
 ```json
@@ -637,8 +647,10 @@ de acceso seguro.
 
 `DELETE /players/{player_id}/photos/{photo_id}` elimina de forma permanente la fila y
 el archivo y responde `204`. Puede eliminar la última foto; en ese estado el futuro
-flujo de reconocimiento deberá pasar a resolución manual. Si la fila existe pero falta
-el archivo, elimina la referencia obsoleta y también responde `204`.
+flujo de reconocimiento deberá pasar a resolución manual. Si la foto es la referencia
+inicial y existe otra foto, responde `409 initial_reference_photo_required`; debe
+conservarse hasta eliminar las demás. Si la fila existe pero falta el archivo, elimina
+la referencia obsoleta y también responde `204`.
 
 El frontend puede usar la URL pública individual directamente en `<img src>`. La
 galería y las operaciones de gestión continúan usando el cliente autenticado.
@@ -886,7 +898,9 @@ Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not
 `team_gender_mismatch` y `team_capacity_reached`. Los de fotos incluyen
 `photo_too_large`, `unsupported_photo_format`, `invalid_photo_dimensions`,
 `invalid_face_count`, `face_too_small`, `player_photo_limit_reached`, `invalid_photo`,
-`photo_not_found`, `photo_processing_unavailable` y `photo_storage_unavailable`.
+`photo_identity_mismatch`, `initial_reference_photo_required`, `photo_not_found`,
+`photo_processing_unavailable`, `photo_identity_validation_unavailable` y
+`photo_storage_unavailable`.
 
 ## OpenAPI y Hoppscotch
 
@@ -928,6 +942,8 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 - `e1f4c8a2b6d0` agrega sanciones globales originadas en partidos y el snapshot
   inmutable de sus equipos.
 - `f2a3b4c5d6e7` agrega el historial auditable de consumos canónicos de sanciones.
+- `d4e5f6a7b8c9` agrega la marca de referencia inicial de las fotos de jugador y
+  marca de forma determinista la foto histórica de menor identificador.
 
 Los archivos de las fotos no están en PostgreSQL sino en `PLAYER_PHOTOS_DIR`. Hacer
 downgrade de `29ab530e58fc` elimina la tabla, pero no borra esos archivos.
