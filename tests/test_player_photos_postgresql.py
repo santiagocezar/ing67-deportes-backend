@@ -177,6 +177,16 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
             foreign_keys[0]["options"].get("ondelete"),
             "RESTRICT",
         )
+        columns = {
+            column["name"]: column
+            for column in inspect(db.engine).get_columns("player_photos")
+        }
+        self.assertFalse(columns["is_initial_reference"]["nullable"])
+        indexes = {
+            index["name"]: index
+            for index in inspect(db.engine).get_indexes("player_photos")
+        }
+        self.assertIn("uq_player_photos_initial_reference", indexes)
 
         with self.app.app_context():
             db.session.add(
@@ -185,6 +195,26 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
                     file_name=f"{'9' * 32}.png",
                     content_type="image/gif",
                 )
+            )
+            with self.assertRaises(IntegrityError):
+                db.session.commit()
+            db.session.rollback()
+
+            db.session.add_all(
+                [
+                    PlayerPhoto(
+                        player_id=self.player_id,
+                        file_name=f"{'7' * 32}.png",
+                        content_type="image/png",
+                        is_initial_reference=True,
+                    ),
+                    PlayerPhoto(
+                        player_id=self.player_id,
+                        file_name=f"{'6' * 32}.png",
+                        content_type="image/png",
+                        is_initial_reference=True,
+                    ),
+                ]
             )
             with self.assertRaises(IntegrityError):
                 db.session.commit()
@@ -200,6 +230,51 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
             with self.assertRaises(IntegrityError):
                 db.session.commit()
             db.session.rollback()
+
+    def test_initial_reference_migration_backfills_the_lowest_photo_id(self):
+        first_file_name = f"{'5' * 32}.png"
+        second_file_name = f"{'4' * 32}.png"
+        with self.app.app_context():
+            db.session.remove()
+            downgrade(revision="a3c4e5f6a7b8")
+            db.session.execute(
+                text(
+                    "INSERT INTO player_photos "
+                    "(player_id, file_name, content_type) "
+                    "VALUES (:player_id, :file_name, 'image/png')"
+                ),
+                {
+                    "player_id": self.player_id,
+                    "file_name": first_file_name,
+                },
+            )
+            db.session.execute(
+                text(
+                    "INSERT INTO player_photos "
+                    "(player_id, file_name, content_type) "
+                    "VALUES (:player_id, :file_name, 'image/png')"
+                ),
+                {
+                    "player_id": self.player_id,
+                    "file_name": second_file_name,
+                },
+            )
+            db.session.commit()
+            upgrade()
+            references = db.session.execute(
+                text(
+                    "SELECT file_name, is_initial_reference "
+                    "FROM player_photos "
+                    "WHERE player_id = :player_id "
+                    "ORDER BY id"
+                ),
+                {"player_id": self.player_id},
+            ).all()
+
+        self.assertEqual(
+            references,
+            [(first_file_name, True), (second_file_name, False)],
+        )
 
     def test_sanction_migration_creates_checks_foreign_keys_and_index(self):
         with self.app.app_context():
@@ -302,6 +377,7 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
                         player_id=self.player_id,
                         file_name=file_name,
                         content_type="image/png",
+                        is_initial_reference=index == 0,
                     )
                 )
                 (self.temp_dir / file_name).write_bytes(PNG_BYTES)
@@ -343,6 +419,9 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
             patch(
                 "app.services.player_photos._lock_enabled_player",
                 side_effect=synchronized_lock,
+            ),
+            patch(
+                "app.services.player_photos._validate_photo_identity",
             ),
         ):
             threads = [threading.Thread(target=upload) for _ in range(2)]
@@ -434,6 +513,9 @@ class PlayerPhotoPostgreSQLIntegrationTests(unittest.TestCase):
             patch(
                 "app.services.player_photos._lock_enabled_player",
                 side_effect=upload_lock,
+            ),
+            patch(
+                "app.services.player_photos._validate_photo_identity",
             ),
             patch(
                 "app.services.players._lock_player",

@@ -9,7 +9,7 @@ import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import cv2
 import numpy as np
@@ -34,10 +34,13 @@ from app.services.player_photos import (
     MAX_PLAYER_PHOTO_BYTES,
     PNG_FORMAT,
     FaceTooSmallError,
+    InitialReferencePhotoRequiredError,
     InvalidFaceCountError,
     InvalidPhotoDimensionsError,
     InvalidPhotoError,
     PhotoProcessingUnavailableError,
+    PhotoIdentityMismatchError,
+    PhotoIdentityValidationUnavailableError,
     PlayerPhotoLimitReachedError,
     PhotoTooLargeError,
     PhotoStorageError,
@@ -46,6 +49,7 @@ from app.services.player_photos import (
     UnsupportedPhotoFormatError,
     _write_pending_file,
     _face_locations,
+    _validate_photo_identity,
     add_player_photo,
     delete_player_photo,
     get_player_photo_file,
@@ -128,11 +132,18 @@ def _png_of_size(size: int) -> bytes:
     return PNG_BYTES[:iend_start] + chunk + PNG_BYTES[iend_start:]
 
 
-def _photo(photo_id=1, *, player_id=1, content_type="image/png"):
+def _photo(
+    photo_id=1,
+    *,
+    player_id=1,
+    content_type="image/png",
+    is_initial_reference=False,
+):
     return SimpleNamespace(
         id=photo_id,
         player_id=player_id,
         content_type=content_type,
+        is_initial_reference=is_initial_reference,
         created_at=datetime(2026, 9, 26, 12, 0, tzinfo=timezone.utc),
         file_name="must-not-leak.png",
     )
@@ -295,6 +306,51 @@ class PlayerPhotoValidationTests(unittest.TestCase):
             model="hog",
         )
 
+    def test_later_photo_uses_the_smallest_same_player_distance(self):
+        recognizer = MagicMock()
+        recognizer.face_distance.return_value = [0.61, 0.60]
+        existing = [SimpleNamespace(id=1), SimpleNamespace(id=2)]
+        with (
+            patch(
+                "app.services.player_photos._face_encoding",
+                return_value="candidate-encoding",
+            ),
+            patch(
+                "app.services.player_photos._existing_photo_encoding",
+                side_effect=["first-reference", "second-reference"],
+            ),
+            patch(
+                "app.services.player_photos._face_recognition_module",
+                return_value=recognizer,
+            ),
+        ):
+            _validate_photo_identity(PNG_BYTES, existing)
+
+        recognizer.face_distance.assert_called_once_with(
+            ["first-reference", "second-reference"],
+            "candidate-encoding",
+        )
+
+    def test_later_photo_rejects_a_nonmatching_identity(self):
+        recognizer = MagicMock()
+        recognizer.face_distance.return_value = [0.60001]
+        with (
+            patch(
+                "app.services.player_photos._face_encoding",
+                return_value="candidate-encoding",
+            ),
+            patch(
+                "app.services.player_photos._existing_photo_encoding",
+                return_value="reference-encoding",
+            ),
+            patch(
+                "app.services.player_photos._face_recognition_module",
+                return_value=recognizer,
+            ),
+            self.assertRaises(PhotoIdentityMismatchError),
+        ):
+            _validate_photo_identity(PNG_BYTES, [SimpleNamespace(id=1)])
+
 
 class PlayerPhotoStorageTests(unittest.TestCase):
     def setUp(self):
@@ -355,6 +411,7 @@ class PlayerPhotoStorageTests(unittest.TestCase):
         self.assertIsInstance(photo, PlayerPhoto)
         self.assertEqual(photo.player_id, 7)
         self.assertEqual(photo.content_type, "image/jpeg")
+        self.assertTrue(photo.is_initial_reference)
         self.assertRegex(photo.file_name, r"^[0-9a-f]{32}\.jpg$")
         stored_files = self._stored_files()
         self.assertEqual([path.name for path in stored_files], [photo.file_name])
@@ -365,6 +422,33 @@ class PlayerPhotoStorageTests(unittest.TestCase):
         statement = execute.call_args_list[0].args[0]
         sql = str(statement.compile(dialect=postgresql.dialect()))
         self.assertIn("FOR UPDATE", sql)
+
+    def test_later_matching_photo_is_not_the_initial_reference(self):
+        player = SimpleNamespace(id=7, is_enabled=True)
+        existing_photo = SimpleNamespace(id=1)
+        photos_result = MagicMock()
+        photos_result.scalars.return_value = [existing_photo]
+        with (
+            self.app.app_context(),
+            patch.object(
+                db.session,
+                "execute",
+                side_effect=(self._player_lookup(player), photos_result),
+            ),
+            patch(
+                "app.services.player_photos._validate_photo_identity"
+            ) as identity_validation,
+            patch.object(db.session, "add"),
+            patch.object(db.session, "flush"),
+            patch.object(db.session, "commit"),
+        ):
+            photo = add_player_photo(
+                7,
+                file_name="later.png",
+                content=PNG_BYTES,
+            )
+        self.assertFalse(photo.is_initial_reference)
+        identity_validation.assert_called_once_with(PNG_BYTES, [existing_photo])
 
     def test_rejected_photo_never_reaches_the_database_or_disk(self):
         with (
@@ -436,9 +520,9 @@ class PlayerPhotoStorageTests(unittest.TestCase):
             with self.assertRaises(OSError):
                 add_player_photo(1, file_name="photo.png", content=PNG_BYTES)
 
-        execute.assert_not_called()
+        self.assertEqual(execute.call_count, 2)
         add.assert_not_called()
-        rollback.assert_not_called()
+        rollback.assert_called_once()
 
     def test_partial_file_is_removed_when_writing_fails(self):
         with self.app.app_context():
@@ -449,6 +533,10 @@ class PlayerPhotoStorageTests(unittest.TestCase):
 
     def test_fourth_photo_is_rejected_under_the_player_lock(self):
         player = SimpleNamespace(id=1, is_enabled=True)
+        photos_result = MagicMock()
+        photos_result.scalars.return_value = [
+            SimpleNamespace(id=index) for index in range(MAX_PLAYER_PHOTOS)
+        ]
         with (
             self.app.app_context(),
             patch.object(
@@ -456,7 +544,7 @@ class PlayerPhotoStorageTests(unittest.TestCase):
                 "execute",
                 side_effect=(
                     self._player_lookup(player),
-                    self._scalar(MAX_PLAYER_PHOTOS),
+                    photos_result,
                 ),
             ),
             patch.object(db.session, "add") as add,
@@ -629,6 +717,35 @@ class PlayerPhotoStorageTests(unittest.TestCase):
         delete.assert_called_once_with(photo)
         commit.assert_called_once()
 
+    def test_initial_reference_cannot_be_deleted_while_other_photos_exist(self):
+        player = SimpleNamespace(id=1, is_enabled=True)
+        photo = SimpleNamespace(
+            id=5,
+            player_id=1,
+            file_name=f"{'e' * 32}.png",
+            is_initial_reference=True,
+        )
+        photo_result = MagicMock()
+        photo_result.scalar_one_or_none.return_value = photo
+        with (
+            self.app.app_context(),
+            patch.object(
+                db.session,
+                "execute",
+                side_effect=(
+                    self._player_lookup(player),
+                    photo_result,
+                    self._scalar(1),
+                ),
+            ),
+            patch.object(db.session, "delete") as delete,
+            patch.object(db.session, "rollback") as rollback,
+        ):
+            with self.assertRaises(InitialReferencePhotoRequiredError):
+                delete_player_photo(1, 5)
+        delete.assert_not_called()
+        rollback.assert_called_once()
+
     def test_delete_rollback_restores_staged_file(self):
         file_name = f"{'d' * 32}.png"
         self.photos_dir.mkdir()
@@ -786,7 +903,13 @@ class PlayerPhotoApiTests(unittest.TestCase):
         PlayerPhotoResponse.model_validate(payload)
         self.assertEqual(
             set(payload),
-            {"id", "player_id", "content_type", "created_at"},
+            {
+                "id",
+                "player_id",
+                "content_type",
+                "is_initial_reference",
+                "created_at",
+            },
         )
         service.assert_called_once_with(
             1,
@@ -1031,6 +1154,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
             ),
             (InvalidFaceCountError(), 422, "invalid_face_count"),
             (FaceTooSmallError(), 422, "face_too_small"),
+            (PhotoIdentityMismatchError(), 422, "photo_identity_mismatch"),
             (PlayerNotFoundError("missing"), 404, "player_not_found"),
             (PlayerDisabledError("disabled"), 409, "player_disabled"),
             (
@@ -1042,6 +1166,11 @@ class PlayerPhotoApiTests(unittest.TestCase):
                 PhotoProcessingUnavailableError("missing dependency"),
                 503,
                 "photo_processing_unavailable",
+            ),
+            (
+                PhotoIdentityValidationUnavailableError("missing reference"),
+                503,
+                "photo_identity_validation_unavailable",
             ),
             (
                 SQLAlchemyError("private database detail"),
@@ -1125,6 +1254,13 @@ class PlayerPhotoApiTests(unittest.TestCase):
                 PlayerPhotoNotFoundError("missing"),
                 404,
                 "photo_not_found",
+            ),
+            (
+                "/players/1/photos/9",
+                delete_service,
+                InitialReferencePhotoRequiredError(),
+                409,
+                "initial_reference_photo_required",
             ),
             (
                 "/players/1/photos/9",
@@ -1213,7 +1349,13 @@ class PlayerPhotoApiTests(unittest.TestCase):
         self.assertFalse(upload_form["additionalProperties"])
         self.assertEqual(
             set(schemas["PlayerPhotoResponse"]["properties"]),
-            {"id", "player_id", "content_type", "created_at"},
+            {
+                "id",
+                "player_id",
+                "content_type",
+                "is_initial_reference",
+                "created_at",
+            },
         )
 
 
@@ -1222,7 +1364,14 @@ class PlayerPhotoModelTests(unittest.TestCase):
         table = PlayerPhoto.__table__
         self.assertEqual(
             set(table.columns.keys()),
-            {"id", "player_id", "file_name", "content_type", "created_at"},
+            {
+                "id",
+                "player_id",
+                "file_name",
+                "content_type",
+                "is_initial_reference",
+                "created_at",
+            },
         )
         constraint_names = {
             constraint.name
@@ -1241,7 +1390,10 @@ class PlayerPhotoModelTests(unittest.TestCase):
         self.assertEqual(foreign_key.ondelete, "RESTRICT")
         self.assertEqual(
             {index.name for index in table.indexes},
-            {"ix_player_photos_player_id"},
+            {
+                "ix_player_photos_player_id",
+                "uq_player_photos_initial_reference",
+            },
         )
 
     def test_player_photos_keep_upload_order(self):
@@ -1282,6 +1434,39 @@ class PlayerPhotoMigrationTests(unittest.TestCase):
             migration.downgrade()
         operation.drop_index.assert_called_once()
         operation.drop_table.assert_called_once_with("player_photos")
+
+    def test_initial_reference_migration_backfills_and_enforces_one_per_player(self):
+        migration = importlib.import_module(
+            "migrations.versions.d4e5f6a7b8c9_add_player_photo_initial_reference"
+        )
+        self.assertEqual(migration.down_revision, "a3c4e5f6a7b8")
+
+        with patch.object(migration, "op") as operation:
+            migration.upgrade()
+        added_column = operation.add_column.call_args.args[1]
+        self.assertEqual(added_column.name, "is_initial_reference")
+        self.assertTrue(added_column.nullable)
+        backfill = operation.execute.call_args.args[0]
+        self.assertIn("PARTITION BY player_id", backfill)
+        self.assertIn("ORDER BY id", backfill)
+        operation.alter_column.assert_called_once()
+        operation.create_index.assert_called_once_with(
+            "uq_player_photos_initial_reference",
+            "player_photos",
+            ["player_id"],
+            unique=True,
+            postgresql_where=ANY,
+        )
+
+        with patch.object(migration, "op") as operation:
+            migration.downgrade()
+        operation.drop_index.assert_called_once_with(
+            "uq_player_photos_initial_reference",
+            table_name="player_photos",
+        )
+        operation.drop_column.assert_called_once_with(
+            "player_photos", "is_initial_reference"
+        )
 
 
 if __name__ == "__main__":

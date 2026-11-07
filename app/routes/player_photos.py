@@ -14,9 +14,12 @@ from ..schemas.player_photos import (
 from ..schemas.players import PlayerPath
 from ..services.player_photos import (
     FaceTooSmallError,
+    InitialReferencePhotoRequiredError,
     InvalidFaceCountError,
     InvalidPhotoDimensionsError,
     PhotoProcessingUnavailableError,
+    PhotoIdentityMismatchError,
+    PhotoIdentityValidationUnavailableError,
     PhotoStorageError,
     PhotoTooLargeError,
     PhotoValidationError,
@@ -61,6 +64,8 @@ def _database_unavailable(operation: str):
 
 
 def _photo_error(error: PhotoValidationError):
+    if isinstance(error, PhotoIdentityMismatchError):
+        return error_response("photo_identity_mismatch", str(error), 422)
     if isinstance(error, PhotoTooLargeError):
         return error_response("photo_too_large", str(error), 413)
     if isinstance(error, UnsupportedPhotoFormatError):
@@ -126,13 +131,23 @@ def _photo_processing_unavailable():
     )
 
 
+def _photo_identity_validation_unavailable():
+    current_app.logger.error("Player photo identity validation unavailable")
+    return error_response(
+        "photo_identity_validation_unavailable",
+        "Player photo identity validation is temporarily unavailable.",
+        503,
+    )
+
+
 @player_photos_bp.post(
     "/<int:player_id>/photos",
     summary="Upload a Player photo",
     description=(
         "Stores one validated PNG or JPG reference image of at most 5 MB. "
         "An enabled Player may have at most three; each image must contain "
-        "exactly one sufficiently large detected face."
+        "exactly one sufficiently large detected face. Later uploads must "
+        "match a stored photo of the same Player."
     ),
     operation_id="playerPhotosUpload",
     security=ACCESS_SECURITY,
@@ -168,6 +183,8 @@ def post_player_photo(path: PlayerPath, form: PlayerPhotoUploadForm):
         return error_response("player_disabled", str(error), 409)
     except PlayerPhotoLimitReachedError as error:
         return error_response("player_photo_limit_reached", str(error), 409)
+    except PhotoIdentityValidationUnavailableError:
+        return _photo_identity_validation_unavailable()
     except PhotoProcessingUnavailableError:
         return _photo_processing_unavailable()
     except SQLAlchemyError:
@@ -260,8 +277,9 @@ def get_player_photo_image(path: PlayerPhotoPath):
     "/<int:player_id>/photos/<int:photo_id>",
     summary="Delete a Player photo",
     description=(
-        "Permanently deletes one reference photo. The last photo may be "
-        "deleted; automatic recognition then requires manual resolution."
+        "Permanently deletes one reference photo. An initial reference cannot "
+        "be deleted while another photo exists. The last photo may be deleted; "
+        "automatic recognition then requires manual resolution."
     ),
     operation_id="playerPhotosDelete",
     security=ACCESS_SECURITY,
@@ -270,6 +288,7 @@ def get_player_photo_image(path: PlayerPhotoPath):
         401: ErrorResponse,
         403: ErrorResponse,
         404: ErrorResponse,
+        409: ErrorResponse,
         422: ErrorResponse,
         503: ErrorResponse,
     },
@@ -283,6 +302,8 @@ def delete_player_photo_image(path: PlayerPhotoPath):
         return error_response("player_not_found", str(error), 404)
     except PlayerPhotoNotFoundError as error:
         return error_response("photo_not_found", str(error), 404)
+    except InitialReferencePhotoRequiredError as error:
+        return error_response("initial_reference_photo_required", str(error), 409)
     except SQLAlchemyError:
         return _database_unavailable("delete")
     except (PhotoStorageError, OSError):

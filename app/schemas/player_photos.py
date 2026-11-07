@@ -43,6 +43,7 @@ class PlayerPhotoResponse(ApiResponse):
     id: int
     player_id: int
     content_type: PhotoContentType
+    is_initial_reference: bool
     created_at: datetime
 
 

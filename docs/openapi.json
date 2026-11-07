@@ -1081,6 +1081,10 @@
             "title": "Id",
             "type": "integer"
           },
+          "is_initial_reference": {
+            "title": "Is Initial Reference",
+            "type": "boolean"
+          },
           "player_id": {
             "title": "Player Id",
             "type": "integer"
@@ -1090,6 +1094,7 @@
           "id",
           "player_id",
           "content_type",
+          "is_initial_reference",
           "created_at"
         ],
         "title": "PlayerPhotoResponse",
@@ -4879,7 +4884,7 @@
         ]
       },
       "post": {
-        "description": "Stores one validated PNG or JPG reference image of at most 5 MB. An enabled Player may have at most three; each image must contain exactly one sufficiently large detected face.",
+        "description": "Stores one validated PNG or JPG reference image of at most 5 MB. An enabled Player may have at most three; each image must contain exactly one sufficiently large detected face. Later uploads must match a stored photo of the same Player.",
         "operationId": "playerPhotosUpload",
         "parameters": [
           {
@@ -5018,7 +5023,7 @@
     },
     "/players/{player_id}/photos/{photo_id}": {
       "delete": {
-        "description": "Permanently deletes one reference photo. The last photo may be deleted; automatic recognition then requires manual resolution.",
+        "description": "Permanently deletes one reference photo. An initial reference cannot be deleted while another photo exists. The last photo may be deleted; automatic recognition then requires manual resolution.",
         "operationId": "playerPhotosDelete",
         "parameters": [
           {
@@ -5075,6 +5080,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "content": {

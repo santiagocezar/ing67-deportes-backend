@@ -278,6 +278,12 @@ class PlayerPhoto(db.Model):
         ),
         UniqueConstraint("file_name", name="uq_player_photos_file_name"),
         Index("ix_player_photos_player_id", "player_id"),
+        Index(
+            "uq_player_photos_initial_reference",
+            "player_id",
+            unique=True,
+            postgresql_where=text("is_initial_reference = true"),
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -292,6 +298,12 @@ class PlayerPhoto(db.Model):
     )
     file_name = db.Column(db.String(64), nullable=False)
     content_type = db.Column(db.String(20), nullable=False)
+    is_initial_reference = db.Column(
+        db.Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     created_at = db.Column(
         db.DateTime(timezone=True),
         nullable=False,
