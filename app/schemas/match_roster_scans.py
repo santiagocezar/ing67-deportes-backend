@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from flask_openapi3 import FileStorage
-from pydantic import AfterValidator, Field, StrictInt
+from pydantic import AfterValidator, BeforeValidator, Field, StrictInt
 from pydantic_core import PydanticCustomError
 from werkzeug.datastructures import FileStorage as UploadedFile
 
@@ -20,6 +20,7 @@ CountWarning = Literal[
     "recognized_player_count_below_expected",
     "recognized_player_count_above_expected",
 ]
+ManualReviewStatus = Literal["pending", "resolved", "expired"]
 PositivePathId = Annotated[StrictInt, Field(gt=0)]
 PositiveQueryInteger = Annotated[int, Field(gt=0)]
 
@@ -31,6 +32,21 @@ def _require_uploaded_file(value: object) -> UploadedFile:
             "photo must be an uploaded file.",
         )
     return value
+
+
+def _require_retention_confirmation(value: object) -> bool:
+    if value is True or value == "true":
+        return True
+    raise PydanticCustomError(
+        "manual_review_confirmation_required",
+        "retain_for_manual_review must be true.",
+    )
+
+
+RetentionConfirmation = Annotated[
+    bool,
+    BeforeValidator(_require_retention_confirmation),
+]
 
 
 class MatchTeamRosterScanPath(ApiRequest):
@@ -47,6 +63,21 @@ class MatchRosterScanListQuery(ApiRequest):
 
 
 class MatchRosterScanUploadForm(ApiRequest):
+    photo: Annotated[FileStorage, AfterValidator(_require_uploaded_file)] = Field(
+        description=(
+            "One PNG or JPEG group image of at most 10 MiB, between 320 and "
+            "4096 pixels per side, with no more than 12000000 total pixels."
+        )
+    )
+    retain_for_manual_review: RetentionConfirmation = Field(
+        description=(
+            "Must be the literal form value true. It confirms retention only "
+            "when the recomputed result contains an unknown face."
+        )
+    )
+
+
+class MatchRosterScanPreviewForm(ApiRequest):
     photo: Annotated[FileStorage, AfterValidator(_require_uploaded_file)] = Field(
         description=(
             "One PNG or JPEG group image of at most 10 MiB, between 320 and "
@@ -75,6 +106,11 @@ class MatchRosterScanFaceResponse(ApiResponse):
     sanctions: list[MatchRosterScanSanctionResponse]
 
 
+class MatchRosterScanManualReviewResponse(ApiResponse):
+    status: ManualReviewStatus
+    expires_at: datetime
+
+
 class MatchRosterScanResponse(ApiResponse):
     id: int
     match_id: int
@@ -85,6 +121,17 @@ class MatchRosterScanResponse(ApiResponse):
     unique_recognized_players: int
     count_warning: CountWarning | None
     created_at: datetime
+    faces: list[MatchRosterScanFaceResponse]
+    manual_review: MatchRosterScanManualReviewResponse | None
+
+
+class MatchRosterScanPreviewResponse(ApiResponse):
+    match_id: int
+    team_id: int
+    expected_players: int
+    detected_faces: int
+    unique_recognized_players: int
+    count_warning: CountWarning | None
     faces: list[MatchRosterScanFaceResponse]
 
 

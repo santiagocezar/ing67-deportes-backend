@@ -21,6 +21,7 @@ from .match_roster_scans import (
     ScanFaceResult,
     ScanGroupImage,
     ScanSanctionSnapshot,
+    reconcile_expired_match_roster_scan_reviews,
     record_match_roster_scan,
     validate_match_roster_scan_target,
 )
@@ -58,6 +59,27 @@ class _Candidate:
     player_id: int
     player_name: str
     encodings: tuple[object, ...]
+
+
+@dataclass(frozen=True)
+class MatchRosterScanPreview:
+    """Safe, non-persistent computation returned before evidence retention."""
+
+    match_id: int
+    team_id: int
+    expected_players: int
+    detected_faces: int
+    unique_recognized_players: int
+    faces: tuple[ScanFaceResult, ...]
+
+
+@dataclass(frozen=True)
+class _ScanComputation:
+    match_id: int
+    team_id: int
+    expected_players: int
+    content_type: str
+    faces: tuple[ScanFaceResult, ...]
 
 
 def _validate_group_image(content: bytes) -> str:
@@ -315,6 +337,79 @@ def _processed_faces(
     return results
 
 
+def _compute_match_roster_scan(
+    match_id: int,
+    team_id: int,
+    *,
+    actor_user_id: int,
+    actor_role: str,
+    content: bytes,
+) -> _ScanComputation:
+    """Run approved recognition only in memory, without storing a scan or image."""
+    content_type = _validate_group_image(content)
+    _, locations, encodings = _load_group_faces(content)
+    match = validate_match_roster_scan_target(
+        match_id,
+        team_id,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+    )
+    faces = tuple(
+        _processed_faces(
+            match_id=match.id,
+            competition_id=match.competition_id,
+            team_id=team_id,
+            locations=locations,
+            encodings=encodings,
+        )
+    )
+    return _ScanComputation(
+        match_id=match.id,
+        team_id=team_id,
+        expected_players=match.competition.sport.max_players_in_game,
+        content_type=content_type,
+        faces=faces,
+    )
+
+
+def preview_match_roster_scan(
+    match_id: int,
+    team_id: int,
+    *,
+    actor_user_id: int,
+    actor_role: str,
+    content: bytes,
+) -> MatchRosterScanPreview:
+    """Compute a safe preview and discard all request-scoped processing state."""
+    try:
+        computation = _compute_match_roster_scan(
+            match_id,
+            team_id,
+            actor_user_id=actor_user_id,
+            actor_role=actor_role,
+            content=content,
+        )
+        unique_recognized_players = len(
+            {
+                face.player_id
+                for face in computation.faces
+                if face.status != "unknown" and face.player_id is not None
+            }
+        )
+        return MatchRosterScanPreview(
+            match_id=computation.match_id,
+            team_id=computation.team_id,
+            expected_players=computation.expected_players,
+            detected_faces=len(computation.faces),
+            unique_recognized_players=unique_recognized_players,
+            faces=computation.faces,
+        )
+    finally:
+        # Recognition, eligibility, and time-state reads must not turn a preview
+        # into durable history or retention metadata.
+        db.session.rollback()
+
+
 def process_match_roster_scan(
     match_id: int,
     team_id: int,
@@ -322,47 +417,52 @@ def process_match_roster_scan(
     actor_user_id: int,
     actor_role: str,
     content: bytes,
+    retain_for_manual_review: bool = False,
 ) -> MatchRosterScan:
-    """Validate, recognize, classify, and atomically persist one scan."""
-    content_type = _validate_group_image(content)
-    _, locations, encodings = _load_group_faces(content)
+    """Recompute and persist a scan after explicit evidence-retention consent."""
+    if retain_for_manual_review is not True:
+        raise MatchRosterScanServiceError(
+            "manual_review_confirmation_required",
+            "Explicit retention confirmation is required.",
+            422,
+        )
+    reconcile_expired_match_roster_scan_reviews(match_id)
     try:
-        match = validate_match_roster_scan_target(
+        computation = _compute_match_roster_scan(
             match_id,
             team_id,
             actor_user_id=actor_user_id,
             actor_role=actor_role,
-        )
-        faces = _processed_faces(
-            match_id=match.id,
-            competition_id=match.competition_id,
-            team_id=team_id,
-            locations=locations,
-            encodings=encodings,
-        )
-        group_image = (
-            ScanGroupImage(content=content, content_type=content_type)
-            if any(face.status == "unknown" for face in faces)
-            else None
-        )
-        return record_match_roster_scan(
-            match.id,
-            team_id,
-            faces,
-            actor_user_id=actor_user_id,
-            actor_role=actor_role,
-            group_image=group_image,
+            content=content,
         )
     except Exception:
         db.session.rollback()
         raise
+    group_image = (
+        ScanGroupImage(
+            content=content,
+            content_type=computation.content_type,
+        )
+        if any(face.status == "unknown" for face in computation.faces)
+        else None
+    )
+    return record_match_roster_scan(
+        computation.match_id,
+        computation.team_id,
+        computation.faces,
+        actor_user_id=actor_user_id,
+        actor_role=actor_role,
+        group_image=group_image,
+    )
 
 
 __all__ = [
     "AMBIGUITY_DISTANCE_MARGIN",
     "MAX_SCAN_IMAGE_BYTES",
     "RECOGNITION_DISTANCE_THRESHOLD",
+    "MatchRosterScanPreview",
     "ScanImageValidationError",
     "ScanProcessingUnavailableError",
+    "preview_match_roster_scan",
     "process_match_roster_scan",
 ]

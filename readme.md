@@ -65,11 +65,12 @@ backend; no funciona correctamente con réplicas que no compartan el mismo files
 con discos efímeros. Cada jugador habilitado conserva como máximo tres fotos y al
 deshabilitarlo se eliminan de forma permanente.
 
-Las imágenes grupales retenidas de escaneos de plantel usan `MATCH_SCAN_PHOTOS_DIR`
-(por defecto `instance/match_scan_photos`) y nunca se publican mediante una ruta HTTP.
-Sólo se guarda una imagen cuando el resultado terminado contiene al menos una cara
-desconocida. Esta carpeta tiene la misma limitación: una única instancia persistente y
-respaldos coordinados con PostgreSQL.
+Las imágenes grupales de escaneos de plantel usan `MATCH_SCAN_PHOTOS_DIR` (por defecto
+`instance/match_scan_photos`). Sólo se guardan después de una confirmación explícita y
+cuando el cálculo final contiene al menos una cara desconocida. No hay una ruta pública:
+la descarga privada requiere un access token de administrador o del árbitro asignado y
+sólo está disponible mientras la revisión manual esté `pending`. Esta carpeta tiene la
+misma limitación: una única instancia persistente y respaldos coordinados con PostgreSQL.
 
 Si el proceso se interrumpe durante una escritura o eliminación, detener todas las
 instancias del backend y ejecutar:
@@ -84,9 +85,11 @@ El comando es idempotente: promueve archivos `.pending` con fila confirmada, res
 filas sin archivo. Debe ejecutarse con el mismo `PLAYER_PHOTOS_DIR` y la misma base que
 la aplicación.
 
-El segundo comando reconcilia las escrituras pendientes de imágenes privadas de
-escaneo y elimina archivos huérfanos. Detener todas las instancias antes de ejecutar
-cualquiera de los comandos y usar la misma `MATCH_SCAN_PHOTOS_DIR` y base de datos.
+El segundo comando también vence revisiones pendientes cuya evidencia ya superó
+`Match.ends_at + 2 horas`, limpia sus referencias y elimina o recupera archivos
+`.deleting`, además de reconciliar escrituras pendientes y huérfanas. Detener todas las
+instancias antes de ejecutar cualquiera de los comandos y usar la misma
+`MATCH_SCAN_PHOTOS_DIR` y base de datos.
 
 ## Preparación de la base de datos
 
@@ -124,6 +127,14 @@ publica en `POST /matches/{match_id}/teams/{team_id}/roster-scans`: recibe una i
 grupal PNG/JPEG de hasta 10 MiB y puede retenerla en `MATCH_SCAN_PHOTOS_DIR` sólo si
 el resultado contiene una cara desconocida. Aplicar la migración antes de usar el
 endpoint y ejecutar la reconciliación documentada tras una interrupción de escritura.
+
+La migración `b6e7f8a9b0c1` agrega el ciclo de revisión manual consentida
+(`pending`, `resolved`, `expired`). A partir de ella, primero se usa la vista previa
+`POST /matches/{match_id}/teams/{team_id}/roster-scans/preview` y la confirmación final
+requiere `retain_for_manual_review=true`. Las referencias de imágenes históricas que se
+habían guardado sin confirmación se limpian en la migración; ejecutar
+`reconcile-match-scan-photos` después del upgrade elimina sus archivos huérfanos de
+forma segura.
 
 La migración `d4e5f6a7b8c9` agrega la marca de referencia inicial de cada jugador:
 para fotos ya existentes selecciona de forma determinista la fila de menor ID. Aplicar

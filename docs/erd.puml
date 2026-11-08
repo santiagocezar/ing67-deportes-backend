@@ -179,6 +179,14 @@ entity "match_roster_scans" as match_roster_scans {
   * created_at : TIMESTAMPTZ
 }
 
+entity "match_roster_scan_manual_reviews" as match_roster_scan_manual_reviews {
+  * scan_id : INTEGER <<PK, FK>>
+  --
+  * status : VARCHAR(20) <<CHECK>>
+  * expires_at : TIMESTAMPTZ
+  * created_at : TIMESTAMPTZ
+}
+
 entity "match_roster_scan_faces" as match_roster_scan_faces {
   * scan_id : INTEGER <<PK, FK>>
   * face_index : INTEGER <<PK>>
@@ -234,6 +242,7 @@ matches ||--o{ player_sanction_match_consumptions : canonical_group
 matches ||--o{ match_roster_scans : scanned
 teams ||--o{ match_roster_scans : selected_for_scan
 users ||--o{ match_roster_scans : records
+match_roster_scans ||--o| match_roster_scan_manual_reviews : may_retain
 match_roster_scans ||--|{ match_roster_scan_faces : contains
 players ||--o{ match_roster_scan_faces : recognized_as
 match_roster_scan_faces ||--|{ match_roster_scan_face_sanctions : snapshots
@@ -336,7 +345,15 @@ note right of match_roster_scans
   expected_players snapshots Sport.max_players_in_game
   group image file reference and MIME type are paired
   a service verifies selected Team is a Match side
-  group image is retained only when a face result is unknown
+  group image is retained only after explicit consent and an unknown face
+end note
+
+note right of match_roster_scan_manual_reviews
+  one optional lifecycle record per scan; scan deletion is restricted
+  status IN ('pending', 'resolved', 'expired')
+  pending requires private unknown-face evidence (service rule)
+  expires_at snapshots Match.ends_at + 2 hours
+  expiry clears the image reference and removes the local file
 end note
 
 note right of match_roster_scan_faces

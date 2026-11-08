@@ -245,7 +245,10 @@ def create_app(
                 "Each photo must be at most 5 MB.",
                 413,
             )
-        if request.method == "POST" and request.path.endswith("/roster-scans"):
+        if request.method == "POST" and (
+            request.path.endswith("/roster-scans")
+            or request.path.endswith("/roster-scans/preview")
+        ):
             return error_response(
                 "scan_image_too_large",
                 "The group image must be at most 10 MiB.",

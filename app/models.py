@@ -850,6 +850,43 @@ class MatchRosterScan(db.Model):
         cascade="all, delete-orphan",
         order_by="MatchRosterScanFace.face_index",
     )
+    manual_review = db.relationship(
+        "MatchRosterScanManualReview",
+        back_populates="scan",
+        uselist=False,
+    )
+
+
+MANUAL_REVIEW_STATUSES = ("pending", "resolved", "expired")
+
+
+class MatchRosterScanManualReview(db.Model):
+    """Time-bounded private-evidence lifecycle for one unknown-face scan."""
+
+    __tablename__ = "match_roster_scan_manual_reviews"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'resolved', 'expired')",
+            name="ck_match_roster_scan_manual_reviews_status",
+        ),
+    )
+
+    scan_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "match_roster_scans.id",
+            ondelete="RESTRICT",
+            name="fk_match_roster_scan_manual_reviews_scan_id_scans",
+        ),
+        primary_key=True,
+    )
+    status = db.Column(db.String(20), nullable=False, default="pending")
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    scan = db.relationship("MatchRosterScan", back_populates="manual_review")
 
 
 class MatchRosterScanFace(db.Model):
