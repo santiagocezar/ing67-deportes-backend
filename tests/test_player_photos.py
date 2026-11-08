@@ -1082,11 +1082,11 @@ class PlayerPhotoApiTests(unittest.TestCase):
             response.get_json()["error"],
             {
                 "code": "validation_error",
-                "message": "Request validation failed.",
+                "message": "La solicitud contiene datos no válidos.",
                 "details": [
                     {
                         "field": "form.photo",
-                        "message": "Exactly one photo file is required.",
+                        "message": "Debe adjuntar exactamente un archivo.",
                         "type": "multiple_files",
                     }
                 ],
@@ -1107,7 +1107,7 @@ class PlayerPhotoApiTests(unittest.TestCase):
             response.get_json()["error"],
             {
                 "code": "photo_too_large",
-                "message": "Each photo must be at most 5 MB.",
+                "message": "La foto no puede superar los 5 MiB.",
             },
         )
         service.assert_called_once_with(

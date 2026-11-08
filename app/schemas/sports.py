@@ -34,7 +34,7 @@ class SportCreateRequest(ApiRequest):
         max_players = info.data.get("max_players")
         if max_players is not None and max_players_in_game > max_players:
             raise ValueError(
-                "max_players_in_game cannot exceed max_players."
+                "La cantidad de jugadores en cancha no puede superar la cantidad máxima."
             )
         return max_players_in_game
 
@@ -63,7 +63,7 @@ class SportUpdateRequest(ApiRequest):
     ) -> object:
         raise PydanticCustomError(
             "immutable_field",
-            f"{info.field_name} cannot be modified after sport creation.",
+            f"{info.field_name} no puede modificarse después de crear el deporte.",
         )
 
 

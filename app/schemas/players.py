@@ -19,7 +19,7 @@ def _reject_duplicate_team_ids(team_ids: list[int]) -> list[int]:
     if len(team_ids) != len(set(team_ids)):
         raise PydanticCustomError(
             "duplicate_team_ids",
-            "team_ids must not contain duplicate values.",
+            "No se permiten equipos repetidos.",
         )
     return team_ids
 

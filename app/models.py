@@ -929,11 +929,17 @@ class MatchRosterScanFace(db.Model):
     __table_args__ = (
         CheckConstraint("face_index >= 0", name="ck_match_roster_scan_faces_index"),
         CheckConstraint("top >= 0", name="ck_match_roster_scan_faces_top"),
-        CheckConstraint("right >= 0", name="ck_match_roster_scan_faces_right"),
-        CheckConstraint("bottom >= 0", name="ck_match_roster_scan_faces_bottom"),
-        CheckConstraint("left >= 0", name="ck_match_roster_scan_faces_left"),
         CheckConstraint(
-            "right > left AND bottom > top",
+            '"right" >= 0',
+            name="ck_match_roster_scan_faces_right",
+        ),
+        CheckConstraint("bottom >= 0", name="ck_match_roster_scan_faces_bottom"),
+        CheckConstraint(
+            '"left" >= 0',
+            name="ck_match_roster_scan_faces_left",
+        ),
+        CheckConstraint(
+            '"right" > "left" AND bottom > top',
             name="ck_match_roster_scan_faces_box_order",
         ),
         CheckConstraint(

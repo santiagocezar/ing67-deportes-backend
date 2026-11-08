@@ -42,7 +42,7 @@ def _require_uploaded_file(value: object) -> UploadedFile:
     if not isinstance(value, UploadedFile) or not value.filename:
         raise PydanticCustomError(
             "photo_file_required",
-            "photo must be an uploaded file.",
+            "photo debe ser un archivo adjunto.",
         )
     return value
 
@@ -52,7 +52,7 @@ def _require_retention_confirmation(value: object) -> bool:
         return True
     raise PydanticCustomError(
         "manual_review_confirmation_required",
-        "retain_for_manual_review must be true.",
+        "retain_for_manual_review debe ser true.",
     )
 
 
@@ -118,12 +118,12 @@ class MatchRosterScanManualReviewDecisionRequest(ApiRequest):
         if self.outcome == "belongs_to_team" and self.player_id is None:
             raise PydanticCustomError(
                 "manual_review_player_required",
-                "belongs_to_team requires player_id.",
+                "belongs_to_team requiere player_id.",
             )
         if self.outcome != "belongs_to_team" and self.player_id is not None:
             raise PydanticCustomError(
                 "manual_review_player_forbidden",
-                "Only belongs_to_team may include player_id.",
+                "Solo belongs_to_team puede incluir player_id.",
             )
         return self
 

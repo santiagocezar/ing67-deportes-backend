@@ -1,4 +1,5 @@
 import io
+import importlib
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -9,10 +10,14 @@ from unittest.mock import MagicMock, patch
 import cv2
 import numpy as np
 from flask_jwt_extended import create_access_token
+from sqlalchemy import CheckConstraint
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateTable
 from werkzeug.datastructures import FileStorage, MultiDict
 from werkzeug.test import encode_multipart
 
 from app.app import create_app
+from app.models import MatchRosterScanFace
 from app.services.match_roster_scan_processing import (
     AMBIGUITY_DISTANCE_MARGIN,
     MAX_SCAN_IMAGE_BYTES,
@@ -752,6 +757,40 @@ class MatchRosterScanRecognitionTests(unittest.TestCase):
                 actor_role="administrator",
                 content=PNG_BYTES,
             )
+
+
+class MatchRosterScanSqlIdentifierTests(unittest.TestCase):
+    def test_face_box_constraints_quote_postgresql_reserved_identifiers(self):
+        ddl = str(
+            CreateTable(MatchRosterScanFace.__table__).compile(
+                dialect=postgresql.dialect()
+            )
+        )
+
+        self.assertIn('CHECK ("right" >= 0)', ddl)
+        self.assertIn('CHECK ("left" >= 0)', ddl)
+        self.assertIn('CHECK ("right" > "left" AND bottom > top)', ddl)
+
+    def test_foundation_migration_quotes_reserved_face_box_identifiers(self):
+        migration = importlib.import_module(
+            "migrations.versions.a3c4e5f6a7b8_add_match_roster_scans"
+        )
+        with patch.object(migration, "op") as operation:
+            migration.upgrade()
+
+        face_table_call = next(
+            call
+            for call in operation.create_table.call_args_list
+            if call.args[0] == "match_roster_scan_faces"
+        )
+        checks = {
+            str(constraint.sqltext)
+            for constraint in face_table_call.args[1:]
+            if isinstance(constraint, CheckConstraint)
+        }
+        self.assertIn('"right" >= 0', checks)
+        self.assertIn('"left" >= 0', checks)
+        self.assertIn('"right" > "left" AND bottom > top', checks)
 
 
 if __name__ == "__main__":

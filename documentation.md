@@ -58,11 +58,11 @@ Ejemplo de `422`:
 {
   "error": {
     "code": "validation_error",
-    "message": "Request validation failed.",
+    "message": "La solicitud contiene datos no válidos.",
     "details": [
       {
         "field": "body.name",
-        "message": "Field required",
+        "message": "Este campo es obligatorio.",
         "type": "missing"
       }
     ]
@@ -624,7 +624,7 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 {
   "error": {
     "code": "unsupported_photo_format",
-    "message": "Only PNG and JPG photos are allowed."
+    "message": "Solo se permiten fotos PNG o JPG."
   }
 }
 ```
@@ -995,6 +995,8 @@ bloqueo de altas de equipos y planteles sólo si no queda otra sanción activa d
 | `503` | Base de datos, almacenamiento de fotos o autenticación temporalmente no disponible. |
 
 Frontend debe decidir con `error.code` y mostrar `error.message` como texto legible.
+Todos los mensajes y detalles de error que devuelve la API están en español; los
+códigos y los nombres de campos permanecen en inglés como identificadores estables.
 Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not_found`,
 `team_not_found`, `player_disabled`, `team_disabled`, `team_sport_mismatch`,
 `team_gender_mismatch` y `team_capacity_reached`. Los de fotos incluyen

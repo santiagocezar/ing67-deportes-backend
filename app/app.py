@@ -12,10 +12,11 @@ from flask_openapi3 import Info, OpenAPI, SecurityScheme
 from pydantic import ValidationError
 from sqlalchemy import inspect
 from sqlalchemy.exc import SQLAlchemyError
-from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.exceptions import HTTPException, RequestEntityTooLarge
 
 from .errors import (
     error_response,
+    localized_validation_message,
     validation_error_response,
 )
 from .extensions import cors, db, jwt, migrate
@@ -48,7 +49,9 @@ def _validation_summary(error: ValidationError) -> str:
         include_input=False,
     ):
         field = ".".join(str(part) for part in item.get("loc", ()))
-        message = str(item.get("msg", "Invalid value"))
+        message = localized_validation_message(
+            str(item.get("type", "value_error"))
+        )
         messages.append(f"{field}: {message}" if field else message)
     return "; ".join(messages)
 
@@ -260,6 +263,39 @@ def create_app(
             "The request body is too large.",
             413,
         )
+
+    @flask_app.errorhandler(HTTPException)
+    def handled_http_error(error: HTTPException):
+        """Keep framework-generated HTTP errors in the public envelope."""
+
+        status = error.code or 500
+        code_by_status = {
+            400: "invalid_request",
+            401: "authentication_required",
+            403: "forbidden",
+            404: "resource_not_found",
+            405: "method_not_allowed",
+            413: "request_too_large",
+            415: "invalid_request",
+            422: "validation_error",
+            500: "internal_error",
+        }
+        return error_response(
+            code_by_status.get(status, "request_error"),
+            "",
+            status,
+        )
+
+    @flask_app.errorhandler(Exception)
+    def unhandled_application_error(error: Exception):
+        """Do not expose unexpected implementation errors to API clients."""
+
+        flask_app.logger.error(
+            "Unexpected application error: %s",
+            type(error).__name__,
+        )
+        db.session.rollback()
+        return error_response("internal_error", "", 500)
 
     @flask_app.cli.command("init-db")
     def init_db_command() -> None:

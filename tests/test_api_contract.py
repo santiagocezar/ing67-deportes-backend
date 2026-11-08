@@ -8,6 +8,7 @@ from unittest.mock import patch
 from flask_jwt_extended import create_access_token, create_refresh_token
 
 from app.app import create_app
+from app.errors import error_response
 from app.schemas.auth import (
     SignupRequest,
     SignupResponse,
@@ -293,6 +294,65 @@ class ApiContractTests(unittest.TestCase):
         serialized = response.get_data(as_text=True)
         self.assertNotIn("never-return-this-value", serialized)
         self.assertNotIn("also-sensitive", serialized)
+
+    def test_public_error_messages_and_validation_details_are_in_spanish(self):
+        unauthorized = self.client.post("/sports")
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(
+            unauthorized.get_json()["error"]["message"],
+            "Se requiere autenticación.",
+        )
+
+        validation = self.client.post("/auth/signup", json={})
+        self.assertEqual(validation.status_code, 422)
+        validation_error = validation.get_json()["error"]
+        self.assertEqual(
+            validation_error["message"],
+            "La solicitud contiene datos no válidos.",
+        )
+        self.assertEqual(
+            validation_error["details"][0]["message"],
+            "Este campo es obligatorio.",
+        )
+
+        missing_route = self.client.get("/ruta-inexistente")
+        self.assertEqual(missing_route.status_code, 404)
+        self.assertEqual(
+            missing_route.get_json()["error"],
+            {
+                "code": "resource_not_found",
+                "message": "El recurso solicitado no existe.",
+            },
+        )
+
+        with self.app.test_request_context():
+            response, status = error_response(
+                "future_error_code",
+                "An English implementation message must not reach clients.",
+                409,
+                details=[
+                    {
+                        "field": "form.photo",
+                        "message": "Exactly one photo file is required.",
+                        "type": "multiple_files",
+                    }
+                ],
+            )
+        self.assertEqual(status, 409)
+        self.assertEqual(
+            response.get_json()["error"],
+            {
+                "code": "future_error_code",
+                "message": "No se pudo procesar la solicitud.",
+                "details": [
+                    {
+                        "field": "form.photo",
+                        "message": "Debe adjuntar exactamente un archivo.",
+                        "type": "multiple_files",
+                    }
+                ],
+            },
+        )
 
     def test_unknown_sport_field_and_boolean_player_limit_return_422(self):
         headers = self._bearer(self.admin_token)
