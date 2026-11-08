@@ -248,6 +248,9 @@ def _scan_read_options():
     return (
         selectinload(MatchRosterScan.faces)
         .joinedload(MatchRosterScanFace.player),
+        selectinload(MatchRosterScan.faces).joinedload(
+            MatchRosterScanFace.manual_review_decision
+        ),
         selectinload(MatchRosterScan.faces).selectinload(
             MatchRosterScanFace.sanction_snapshots
         ),

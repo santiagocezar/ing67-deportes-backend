@@ -8,13 +8,24 @@ from flask_openapi3 import APIBlueprint, Tag, validate_request
 from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from ..errors import error_response, multipart_form_required
+from ..errors import error_response, json_object_required, multipart_form_required
 from ..extensions import db
 from ..schemas.common import ErrorResponse
 from ..schemas.match_roster_scans import (
+    ManualReviewCompetitionResponse,
+    ManualReviewMatchResponse,
+    ManualReviewScanResponse,
+    ManualReviewTeamResponse,
+    MatchManualReviewStatusPath,
+    MatchManualReviewStatusResponse,
     MatchRosterScanFaceResponse,
     MatchRosterScanListQuery,
     MatchRosterScanListResponse,
+    MatchRosterScanManualReviewDecisionResponse,
+    MatchRosterScanManualReviewFinalizeRequest,
+    MatchRosterScanManualReviewListItemResponse,
+    MatchRosterScanManualReviewListQuery,
+    MatchRosterScanManualReviewListResponse,
     MatchRosterScanManualReviewResponse,
     MatchRosterScanPaginationResponse,
     MatchRosterScanPath,
@@ -36,6 +47,13 @@ from ..services.match_roster_scans import (
     get_match_roster_scan,
     get_match_roster_scan_group_image,
     list_match_roster_scans,
+)
+from ..services.match_roster_scan_manual_reviews import (
+    ManualReviewDecisionInput,
+    ManualReviewServiceError,
+    finalize_match_roster_scan_manual_review,
+    get_match_manual_review_status,
+    list_match_roster_scan_manual_reviews,
 )
 from ..services.match_scan_photo_files import ScanImageStorageError
 from ..services.player_photo_files import PhotoStorageError
@@ -162,12 +180,26 @@ def _service_error(error: MatchRosterScanServiceError):
     return error_response(error.code, str(error), error.status_code)
 
 
+def _manual_review_error(error: ManualReviewServiceError):
+    return error_response(error.code, str(error), error.status_code)
+
+
 def _service_unavailable(operation: str):
     db.session.rollback()
     current_app.logger.error("Could not %s Match roster scan", operation)
     return error_response(
         "scan_processing_unavailable",
         "Roster scan processing is temporarily unavailable.",
+        503,
+    )
+
+
+def _manual_review_unavailable(operation: str):
+    db.session.rollback()
+    current_app.logger.error("Could not %s Match manual review", operation)
+    return error_response(
+        "manual_review_unavailable",
+        "Manual review is temporarily unavailable.",
         503,
     )
 
@@ -182,6 +214,34 @@ def _count_warning(
     return None
 
 
+def _sanction_responses(face) -> list[MatchRosterScanSanctionResponse]:
+    snapshots = getattr(face, "sanction_snapshots", None)
+    if snapshots is None:
+        snapshots = getattr(face, "sanctions", ())
+    responses = []
+    for sanction in snapshots:
+        title = getattr(sanction, "title_snapshot", None)
+        reason = getattr(sanction, "reason_snapshot", None)
+        remaining_matches = getattr(
+            sanction,
+            "remaining_matches_snapshot",
+            None,
+        )
+        responses.append(
+            MatchRosterScanSanctionResponse(
+                sanction_id=sanction.sanction_id,
+                title=title if title is not None else sanction.title,
+                reason=reason if reason is not None else sanction.reason,
+                remaining_matches=(
+                    remaining_matches
+                    if remaining_matches is not None
+                    else sanction.remaining_matches
+                ),
+            )
+        )
+    return responses
+
+
 def _face_responses(faces) -> list[MatchRosterScanFaceResponse]:
     return [
         MatchRosterScanFaceResponse(
@@ -194,27 +254,64 @@ def _face_responses(faces) -> list[MatchRosterScanFaceResponse]:
             player_id=face.player_id,
             player_name=face.player_name_snapshot,
             match_percentage=face.match_percentage,
-            sanctions=[
-                MatchRosterScanSanctionResponse(
-                    sanction_id=sanction.sanction_id,
-                    title=sanction.title_snapshot,
-                    reason=sanction.reason_snapshot,
-                    remaining_matches=sanction.remaining_matches_snapshot,
-                )
-                for sanction in face.sanction_snapshots
-            ],
+            sanctions=_sanction_responses(face),
         )
         for face in faces
     ]
+
+
+def _manual_review_response_from_faces(review, faces):
+    decisions = []
+    if review.status == "resolved":
+        decisions = [
+            MatchRosterScanManualReviewDecisionResponse(
+                face_index=face.face_index,
+                outcome=decision.outcome,
+                player_id=decision.player_id,
+                player_name=decision.player_name_snapshot,
+                created_at=decision.created_at,
+            )
+            for face in sorted(faces, key=lambda item: item.face_index)
+            if (
+                decision := getattr(face, "manual_review_decision", None)
+            ) is not None
+        ]
+    return MatchRosterScanManualReviewResponse(
+        status=review.status,
+        expires_at=review.expires_at,
+        resolved_by_user_id=getattr(review, "resolved_by_user_id", None),
+        resolved_at=getattr(review, "resolved_at", None),
+        decisions=decisions,
+    )
 
 
 def _manual_review_response(scan):
     review = getattr(scan, "manual_review", None)
     if review is None:
         return None
-    return MatchRosterScanManualReviewResponse(
-        status=review.status,
-        expires_at=review.expires_at,
+    return _manual_review_response_from_faces(review, scan.faces)
+
+
+def _manual_review_list_item_response(item):
+    return MatchRosterScanManualReviewListItemResponse(
+        competition=ManualReviewCompetitionResponse(
+            id=item.competition_id,
+            name=item.competition_name,
+        ),
+        match=ManualReviewMatchResponse(
+            id=item.match_id,
+            starts_at=item.match_starts_at,
+            ends_at=item.match_ends_at,
+            status=item.match_status,
+        ),
+        team=ManualReviewTeamResponse(id=item.team_id, name=item.team_name),
+        scan=ManualReviewScanResponse(
+            id=item.scan_id,
+            created_at=item.scan_created_at,
+        ),
+        unknown_face_count=item.unknown_face_count,
+        status=item.review.status,
+        expires_at=item.review.expires_at,
     )
 
 
@@ -334,6 +431,142 @@ def get_roster_scan(path: MatchRosterScanPath):
     except (ScanImageStorageError, OSError, SQLAlchemyError):
         return _service_unavailable("get")
     return jsonify(_scan_response(scan).model_dump(mode="json")), 200
+
+
+@match_roster_scans_bp.put(
+    "/roster-scans/<int:scan_id>/manual-review",
+    summary="Finalize one historical manual roster review",
+    description=(
+        "Allows only the Match's assigned referee to submit one immutable, "
+        "complete decision for every automated unknown face. A membership "
+        "choice is checked against the frozen Competition roster."
+    ),
+    operation_id="matchRosterScansFinalizeManualReview",
+    security=ACCESS_SECURITY,
+    responses={
+        200: MatchRosterScanManualReviewResponse,
+        400: ErrorResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        409: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@authenticated_user_required
+@json_object_required
+@validate_request()
+def put_roster_scan_manual_review(
+    path: MatchRosterScanPath,
+    body: MatchRosterScanManualReviewFinalizeRequest,
+):
+    try:
+        review = finalize_match_roster_scan_manual_review(
+            path.scan_id,
+            [
+                ManualReviewDecisionInput(
+                    face_index=decision.face_index,
+                    outcome=decision.outcome,
+                    player_id=decision.player_id,
+                )
+                for decision in body.decisions
+            ],
+            actor_user_id=int(get_jwt_identity()),
+            actor_role=str(get_jwt().get("role", "")),
+        )
+    except ManualReviewServiceError as error:
+        return _manual_review_error(error)
+    except (ScanImageStorageError, OSError, SQLAlchemyError):
+        return _manual_review_unavailable("finalize")
+    payload = _manual_review_response_from_faces(review, review.scan.faces)
+    return jsonify(payload.model_dump(mode="json")), 200
+
+
+@match_roster_scans_bp.get(
+    "/manual-reviews",
+    summary="List historical manual roster reviews",
+    description=(
+        "Returns safe review metadata only. Administrators can read all "
+        "reviews; referees can read reviews for their assigned Matches."
+    ),
+    operation_id="matchRosterScansManualReviewsList",
+    security=ACCESS_SECURITY,
+    responses={
+        200: MatchRosterScanManualReviewListResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@authenticated_user_required
+@validate_request()
+def get_manual_reviews(query: MatchRosterScanManualReviewListQuery):
+    try:
+        result = list_match_roster_scan_manual_reviews(
+            status=query.status,
+            page=query.page,
+            actor_user_id=int(get_jwt_identity()),
+            actor_role=str(get_jwt().get("role", "")),
+        )
+    except ManualReviewServiceError as error:
+        return _manual_review_error(error)
+    except (ScanImageStorageError, OSError, SQLAlchemyError):
+        return _manual_review_unavailable("list")
+    payload = MatchRosterScanManualReviewListResponse(
+        manual_reviews=[
+            _manual_review_list_item_response(item) for item in result.reviews
+        ],
+        pagination=MatchRosterScanPaginationResponse(
+            page=result.page,
+            per_page=result.per_page,
+            total_items=result.total_items,
+            total_pages=result.total_pages,
+        ),
+    )
+    return jsonify(payload.model_dump(mode="json")), 200
+
+
+@match_roster_scans_bp.get(
+    "/matches/<int:match_id>/manual-review-status",
+    summary="Read the derived Match biometric-audit state",
+    description=(
+        "Returns whether at least one unexpired pending manual review remains "
+        "for the Match, with safe lifecycle counts."
+    ),
+    operation_id="matchRosterScansManualReviewStatus",
+    security=ACCESS_SECURITY,
+    responses={
+        200: MatchManualReviewStatusResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@authenticated_user_required
+@validate_request()
+def get_match_manual_review_status_by_id(path: MatchManualReviewStatusPath):
+    try:
+        review_status = get_match_manual_review_status(
+            path.match_id,
+            actor_user_id=int(get_jwt_identity()),
+            actor_role=str(get_jwt().get("role", "")),
+        )
+    except ManualReviewServiceError as error:
+        return _manual_review_error(error)
+    except (ScanImageStorageError, OSError, SQLAlchemyError):
+        return _manual_review_unavailable("read status")
+    payload = MatchManualReviewStatusResponse(
+        match_id=review_status.match_id,
+        requires_biometric_audit=review_status.requires_biometric_audit,
+        pending_review_count=review_status.pending_review_count,
+        resolved_review_count=review_status.resolved_review_count,
+        expired_review_count=review_status.expired_review_count,
+    )
+    return jsonify(payload.model_dump(mode="json")), 200
 
 
 @match_roster_scans_bp.get(

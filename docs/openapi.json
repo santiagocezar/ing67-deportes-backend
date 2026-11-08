@@ -447,6 +447,105 @@
         "title": "LoginRequest",
         "type": "object"
       },
+      "ManualReviewCompetitionResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ManualReviewCompetitionResponse",
+        "type": "object"
+      },
+      "ManualReviewMatchResponse": {
+        "properties": {
+          "ends_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ends At"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "starts_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starts At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "starts_at",
+          "ends_at",
+          "status"
+        ],
+        "title": "ManualReviewMatchResponse",
+        "type": "object"
+      },
+      "ManualReviewScanResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "created_at"
+        ],
+        "title": "ManualReviewScanResponse",
+        "type": "object"
+      },
+      "ManualReviewTeamResponse": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ManualReviewTeamResponse",
+        "type": "object"
+      },
       "MatchCompetitionResponse": {
         "properties": {
           "id": {
@@ -479,6 +578,39 @@
           "matches"
         ],
         "title": "MatchListResponse",
+        "type": "object"
+      },
+      "MatchManualReviewStatusResponse": {
+        "properties": {
+          "expired_review_count": {
+            "title": "Expired Review Count",
+            "type": "integer"
+          },
+          "match_id": {
+            "title": "Match Id",
+            "type": "integer"
+          },
+          "pending_review_count": {
+            "title": "Pending Review Count",
+            "type": "integer"
+          },
+          "requires_biometric_audit": {
+            "title": "Requires Biometric Audit",
+            "type": "boolean"
+          },
+          "resolved_review_count": {
+            "title": "Resolved Review Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "match_id",
+          "requires_biometric_audit",
+          "pending_review_count",
+          "resolved_review_count",
+          "expired_review_count"
+        ],
+        "title": "MatchManualReviewStatusResponse",
         "type": "object"
       },
       "MatchResponse": {
@@ -661,6 +793,237 @@
         "title": "MatchRosterScanListResponse",
         "type": "object"
       },
+      "MatchRosterScanManualReviewDecisionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "face_index": {
+            "minimum": 0.0,
+            "title": "Face Index",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "belongs_to_team",
+              "does_not_belong_to_team",
+              "inconclusive"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "player_id": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Player Id"
+          }
+        },
+        "required": [
+          "face_index",
+          "outcome"
+        ],
+        "title": "MatchRosterScanManualReviewDecisionRequest",
+        "type": "object"
+      },
+      "MatchRosterScanManualReviewDecisionResponse": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "face_index": {
+            "title": "Face Index",
+            "type": "integer"
+          },
+          "outcome": {
+            "enum": [
+              "belongs_to_team",
+              "does_not_belong_to_team",
+              "inconclusive"
+            ],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "player_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Id"
+          },
+          "player_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Player Name"
+          }
+        },
+        "required": [
+          "face_index",
+          "outcome",
+          "player_id",
+          "player_name",
+          "created_at"
+        ],
+        "title": "MatchRosterScanManualReviewDecisionResponse",
+        "type": "object"
+      },
+      "MatchRosterScanManualReviewFinalizeRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanManualReviewDecisionRequest"
+            },
+            "minItems": 1,
+            "title": "Decisions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decisions"
+        ],
+        "title": "MatchRosterScanManualReviewFinalizeRequest",
+        "type": "object"
+      },
+      "MatchRosterScanManualReviewListItemResponse": {
+        "properties": {
+          "competition": {
+            "$ref": "#/components/schemas/ManualReviewCompetitionResponse"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "match": {
+            "$ref": "#/components/schemas/ManualReviewMatchResponse"
+          },
+          "scan": {
+            "$ref": "#/components/schemas/ManualReviewScanResponse"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "resolved",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "team": {
+            "$ref": "#/components/schemas/ManualReviewTeamResponse"
+          },
+          "unknown_face_count": {
+            "title": "Unknown Face Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "competition",
+          "match",
+          "team",
+          "scan",
+          "unknown_face_count",
+          "status",
+          "expires_at"
+        ],
+        "title": "MatchRosterScanManualReviewListItemResponse",
+        "type": "object"
+      },
+      "MatchRosterScanManualReviewListResponse": {
+        "properties": {
+          "manual_reviews": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanManualReviewListItemResponse"
+            },
+            "title": "Manual Reviews",
+            "type": "array"
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/MatchRosterScanPaginationResponse"
+          }
+        },
+        "required": [
+          "manual_reviews",
+          "pagination"
+        ],
+        "title": "MatchRosterScanManualReviewListResponse",
+        "type": "object"
+      },
+      "MatchRosterScanManualReviewResponse": {
+        "properties": {
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanManualReviewDecisionResponse"
+            },
+            "title": "Decisions",
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By User Id"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "resolved",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "expires_at",
+          "resolved_by_user_id",
+          "resolved_at",
+          "decisions"
+        ],
+        "title": "MatchRosterScanManualReviewResponse",
+        "type": "object"
+      },
       "MatchRosterScanPaginationResponse": {
         "properties": {
           "page": {
@@ -687,6 +1050,79 @@
           "total_pages"
         ],
         "title": "MatchRosterScanPaginationResponse",
+        "type": "object"
+      },
+      "MatchRosterScanPreviewForm": {
+        "additionalProperties": false,
+        "properties": {
+          "photo": {
+            "description": "One PNG or JPEG group image of at most 10 MiB, between 320 and 4096 pixels per side, with no more than 12000000 total pixels.",
+            "format": "binary",
+            "title": "Photo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "photo"
+        ],
+        "title": "MatchRosterScanPreviewForm",
+        "type": "object"
+      },
+      "MatchRosterScanPreviewResponse": {
+        "properties": {
+          "count_warning": {
+            "anyOf": [
+              {
+                "enum": [
+                  "recognized_player_count_below_expected",
+                  "recognized_player_count_above_expected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count Warning"
+          },
+          "detected_faces": {
+            "title": "Detected Faces",
+            "type": "integer"
+          },
+          "expected_players": {
+            "title": "Expected Players",
+            "type": "integer"
+          },
+          "faces": {
+            "items": {
+              "$ref": "#/components/schemas/MatchRosterScanFaceResponse"
+            },
+            "title": "Faces",
+            "type": "array"
+          },
+          "match_id": {
+            "title": "Match Id",
+            "type": "integer"
+          },
+          "team_id": {
+            "title": "Team Id",
+            "type": "integer"
+          },
+          "unique_recognized_players": {
+            "title": "Unique Recognized Players",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "match_id",
+          "team_id",
+          "expected_players",
+          "detected_faces",
+          "unique_recognized_players",
+          "count_warning",
+          "faces"
+        ],
+        "title": "MatchRosterScanPreviewResponse",
         "type": "object"
       },
       "MatchRosterScanResponse": {
@@ -734,6 +1170,16 @@
             "title": "Id",
             "type": "integer"
           },
+          "manual_review": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchRosterScanManualReviewResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "match_id": {
             "title": "Match Id",
             "type": "integer"
@@ -757,7 +1203,8 @@
           "unique_recognized_players",
           "count_warning",
           "created_at",
-          "faces"
+          "faces",
+          "manual_review"
         ],
         "title": "MatchRosterScanResponse",
         "type": "object"
@@ -798,10 +1245,16 @@
             "format": "binary",
             "title": "Photo",
             "type": "string"
+          },
+          "retain_for_manual_review": {
+            "description": "Must be the literal form value true. It confirms retention only when the recomputed result contains an unknown face.",
+            "title": "Retain For Manual Review",
+            "type": "boolean"
           }
         },
         "required": [
-          "photo"
+          "photo",
+          "retain_for_manual_review"
         ],
         "title": "MatchRosterScanUploadForm",
         "type": "object"
@@ -3524,6 +3977,102 @@
         ]
       }
     },
+    "/manual-reviews": {
+      "get": {
+        "description": "Returns safe review metadata only. Administrators can read all reviews; referees can read reviews for their assigned Matches.",
+        "operationId": "matchRosterScansManualReviewsList",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "enum": [
+                "pending",
+                "resolved",
+                "expired",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "exclusiveMinimum": 0.0,
+              "title": "Page",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanManualReviewListResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "List historical manual roster reviews",
+        "tags": [
+          "Roster Scans"
+        ]
+      }
+    },
     "/matches/{match_id}": {
       "get": {
         "operationId": "matchesGet",
@@ -3723,6 +4272,95 @@
         "summary": "Schedule or reschedule a Match",
         "tags": [
           "Matches"
+        ]
+      }
+    },
+    "/matches/{match_id}/manual-review-status": {
+      "get": {
+        "description": "Returns whether at least one unexpired pending manual review remains for the Match, with safe lifecycle counts.",
+        "operationId": "matchRosterScansManualReviewStatus",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchManualReviewStatusResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Read the derived Match biometric-audit state",
+        "tags": [
+          "Roster Scans"
         ]
       }
     },
@@ -3964,7 +4602,7 @@
         ]
       },
       "post": {
-        "description": "Detects and compares faces only against enabled current members of the selected Match Team. Embeddings are never stored or returned. A group image is retained privately only if a result is unknown.",
+        "description": "Reprocesses a group image after explicit retention confirmation. Embeddings are never stored or returned. A private group image and pending manual review are created only when the final result has an unknown face.",
         "operationId": "matchRosterScansProcess",
         "parameters": [
           {
@@ -4105,7 +4743,156 @@
             "AccessTokenAuth": []
           }
         ],
-        "summary": "Process a protected Match roster scan",
+        "summary": "Persist a confirmed Match roster scan",
+        "tags": [
+          "Roster Scans"
+        ]
+      }
+    },
+    "/matches/{match_id}/teams/{team_id}/roster-scans/preview": {
+      "post": {
+        "description": "Runs the approved group-image validation and recognition process without creating scan history, a manual review, a file reference, or a stored image.",
+        "operationId": "matchRosterScansPreview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Match Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "team_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Team Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRosterScanPreviewForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanPreviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Content Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Preview a non-persistent Match roster scan",
         "tags": [
           "Roster Scans"
         ]
@@ -5458,7 +6245,7 @@
     },
     "/roster-scans/{scan_id}": {
       "get": {
-        "description": "Returns one immutable scan snapshot. Group images, file references, raw image bytes, and embeddings are never returned.",
+        "description": "Returns one immutable scan snapshot and its safe manual-review lifecycle summary. Group images, file references, raw image bytes, and embeddings are never returned.",
         "operationId": "matchRosterScansGet",
         "parameters": [
           {
@@ -5540,6 +6327,221 @@
           }
         ],
         "summary": "Get a protected Match roster scan",
+        "tags": [
+          "Roster Scans"
+        ]
+      }
+    },
+    "/roster-scans/{scan_id}/group-image": {
+      "get": {
+        "description": "Returns the original private PNG or JPEG only to an administrator or the assigned referee while its manual review remains pending. The response has no URL, filename, validators, range support, or cache.",
+        "operationId": "matchRosterScansGetGroupImage",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Scan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "The retained private PNG or JPEG group image."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Download retained private group-image evidence",
+        "tags": [
+          "Roster Scans"
+        ]
+      }
+    },
+    "/roster-scans/{scan_id}/manual-review": {
+      "put": {
+        "description": "Allows only the Match's assigned referee to submit one immutable, complete decision for every automated unknown face. A membership choice is checked against the frozen Competition roster.",
+        "operationId": "matchRosterScansFinalizeManualReview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scan_id",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0.0,
+              "title": "Scan Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRosterScanManualReviewFinalizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchRosterScanManualReviewResponse"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "AccessTokenAuth": []
+          }
+        ],
+        "summary": "Finalize one historical manual roster review",
         "tags": [
           "Roster Scans"
         ]

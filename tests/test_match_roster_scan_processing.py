@@ -267,6 +267,7 @@ class MatchRosterScanRouteTests(unittest.TestCase):
                     "/roster-scans/7/group-image",
                     headers=self._bearer(self.referee_token),
                 )
+                response.close()
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.mimetype, "image/png")
@@ -466,7 +467,7 @@ class MatchRosterScanHistoryServiceTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 403)
 
     def test_history_load_options_prevent_per_face_or_per_sanction_queries(self):
-        self.assertEqual(len(_scan_read_options()), 3)
+        self.assertEqual(len(_scan_read_options()), 4)
 
     def test_history_uses_stable_bounded_query_and_reports_out_of_range_page(self):
         match = SimpleNamespace(id=3, team_1_id=2, team_2_id=4, referee_id=2)

@@ -2,7 +2,13 @@ from datetime import datetime
 from typing import Annotated, Literal
 
 from flask_openapi3 import FileStorage
-from pydantic import AfterValidator, BeforeValidator, Field, StrictInt
+from pydantic import (
+    AfterValidator,
+    BeforeValidator,
+    Field,
+    StrictInt,
+    model_validator,
+)
 from pydantic_core import PydanticCustomError
 from werkzeug.datastructures import FileStorage as UploadedFile
 
@@ -21,8 +27,15 @@ CountWarning = Literal[
     "recognized_player_count_above_expected",
 ]
 ManualReviewStatus = Literal["pending", "resolved", "expired"]
+ManualReviewListStatus = Literal["pending", "resolved", "expired", "all"]
+ManualReviewDecisionOutcome = Literal[
+    "belongs_to_team",
+    "does_not_belong_to_team",
+    "inconclusive",
+]
 PositivePathId = Annotated[StrictInt, Field(gt=0)]
 PositiveQueryInteger = Annotated[int, Field(gt=0)]
+NonNegativeInteger = Annotated[StrictInt, Field(ge=0)]
 
 
 def _require_uploaded_file(value: object) -> UploadedFile:
@@ -58,7 +71,16 @@ class MatchRosterScanPath(ApiRequest):
     scan_id: PositivePathId
 
 
+class MatchManualReviewStatusPath(ApiRequest):
+    match_id: PositivePathId
+
+
 class MatchRosterScanListQuery(ApiRequest):
+    page: PositiveQueryInteger = 1
+
+
+class MatchRosterScanManualReviewListQuery(ApiRequest):
+    status: ManualReviewListStatus = "pending"
     page: PositiveQueryInteger = 1
 
 
@@ -86,6 +108,33 @@ class MatchRosterScanPreviewForm(ApiRequest):
     )
 
 
+class MatchRosterScanManualReviewDecisionRequest(ApiRequest):
+    face_index: NonNegativeInteger
+    outcome: ManualReviewDecisionOutcome
+    player_id: PositivePathId | None = None
+
+    @model_validator(mode="after")
+    def validate_outcome_player(self):
+        if self.outcome == "belongs_to_team" and self.player_id is None:
+            raise PydanticCustomError(
+                "manual_review_player_required",
+                "belongs_to_team requires player_id.",
+            )
+        if self.outcome != "belongs_to_team" and self.player_id is not None:
+            raise PydanticCustomError(
+                "manual_review_player_forbidden",
+                "Only belongs_to_team may include player_id.",
+            )
+        return self
+
+
+class MatchRosterScanManualReviewFinalizeRequest(ApiRequest):
+    decisions: Annotated[
+        list[MatchRosterScanManualReviewDecisionRequest],
+        Field(min_length=1),
+    ]
+
+
 class MatchRosterScanSanctionResponse(ApiResponse):
     sanction_id: int
     title: str
@@ -106,9 +155,20 @@ class MatchRosterScanFaceResponse(ApiResponse):
     sanctions: list[MatchRosterScanSanctionResponse]
 
 
+class MatchRosterScanManualReviewDecisionResponse(ApiResponse):
+    face_index: int
+    outcome: ManualReviewDecisionOutcome
+    player_id: int | None
+    player_name: str | None
+    created_at: datetime
+
+
 class MatchRosterScanManualReviewResponse(ApiResponse):
     status: ManualReviewStatus
     expires_at: datetime
+    resolved_by_user_id: int | None
+    resolved_at: datetime | None
+    decisions: list[MatchRosterScanManualReviewDecisionResponse]
 
 
 class MatchRosterScanResponse(ApiResponse):
@@ -135,11 +195,56 @@ class MatchRosterScanPreviewResponse(ApiResponse):
     faces: list[MatchRosterScanFaceResponse]
 
 
+class ManualReviewCompetitionResponse(ApiResponse):
+    id: int
+    name: str
+
+
+class ManualReviewMatchResponse(ApiResponse):
+    id: int
+    starts_at: datetime | None
+    ends_at: datetime | None
+    status: str
+
+
+class ManualReviewTeamResponse(ApiResponse):
+    id: int
+    name: str
+
+
+class ManualReviewScanResponse(ApiResponse):
+    id: int
+    created_at: datetime
+
+
+class MatchRosterScanManualReviewListItemResponse(ApiResponse):
+    competition: ManualReviewCompetitionResponse
+    match: ManualReviewMatchResponse
+    team: ManualReviewTeamResponse
+    scan: ManualReviewScanResponse
+    unknown_face_count: int
+    status: ManualReviewStatus
+    expires_at: datetime
+
+
 class MatchRosterScanPaginationResponse(ApiResponse):
     page: int
     per_page: int
     total_items: int
     total_pages: int
+
+
+class MatchRosterScanManualReviewListResponse(ApiResponse):
+    manual_reviews: list[MatchRosterScanManualReviewListItemResponse]
+    pagination: MatchRosterScanPaginationResponse
+
+
+class MatchManualReviewStatusResponse(ApiResponse):
+    match_id: int
+    requires_biometric_audit: bool
+    pending_review_count: int
+    resolved_review_count: int
+    expired_review_count: int
 
 
 class MatchRosterScanListResponse(ApiResponse):

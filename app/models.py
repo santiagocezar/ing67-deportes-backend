@@ -265,6 +265,11 @@ class Player(db.Model):
         back_populates="player",
         passive_deletes=True,
     )
+    manual_review_decisions = db.relationship(
+        "MatchRosterScanManualReviewDecision",
+        back_populates="player",
+        passive_deletes=True,
+    )
 
 
 class PlayerPhoto(db.Model):
@@ -375,6 +380,11 @@ class User(db.Model):
     created_roster_scans = db.relationship(
         "MatchRosterScan",
         back_populates="created_by",
+        passive_deletes=True,
+    )
+    resolved_roster_scan_manual_reviews = db.relationship(
+        "MatchRosterScanManualReview",
+        back_populates="resolved_by",
         passive_deletes=True,
     )
 
@@ -869,6 +879,13 @@ class MatchRosterScanManualReview(db.Model):
             "status IN ('pending', 'resolved', 'expired')",
             name="ck_match_roster_scan_manual_reviews_status",
         ),
+        CheckConstraint(
+            "(status = 'resolved' AND resolved_by_user_id IS NOT NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status IN ('pending', 'expired') "
+            "AND resolved_by_user_id IS NULL AND resolved_at IS NULL)",
+            name="ck_match_roster_scan_manual_reviews_resolution_audit",
+        ),
     )
 
     scan_id = db.Column(
@@ -882,11 +899,27 @@ class MatchRosterScanManualReview(db.Model):
     )
     status = db.Column(db.String(20), nullable=False, default="pending")
     expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    resolved_by_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name=(
+                "fk_match_roster_scan_manual_reviews_resolved_by_user_id_users"
+            ),
+        ),
+        nullable=True,
+    )
+    resolved_at = db.Column(db.DateTime(timezone=True), nullable=True)
     created_at = db.Column(
         db.DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     scan = db.relationship("MatchRosterScan", back_populates="manual_review")
+    resolved_by = db.relationship(
+        "User",
+        back_populates="resolved_roster_scan_manual_reviews",
+    )
 
 
 class MatchRosterScanFace(db.Model):
@@ -958,11 +991,83 @@ class MatchRosterScanFace(db.Model):
 
     scan = db.relationship("MatchRosterScan", back_populates="faces")
     player = db.relationship("Player", back_populates="roster_scan_faces")
+    manual_review_decision = db.relationship(
+        "MatchRosterScanManualReviewDecision",
+        back_populates="face",
+        uselist=False,
+    )
     sanction_snapshots = db.relationship(
         "MatchRosterScanFaceSanction",
         back_populates="face",
         cascade="all, delete-orphan",
         order_by="MatchRosterScanFaceSanction.sanction_id",
+    )
+
+
+MANUAL_REVIEW_DECISION_OUTCOMES = (
+    "belongs_to_team",
+    "does_not_belong_to_team",
+    "inconclusive",
+)
+
+
+class MatchRosterScanManualReviewDecision(db.Model):
+    """Immutable referee conclusion for one automated unknown-face snapshot."""
+
+    __tablename__ = "match_roster_scan_manual_review_decisions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["scan_id", "face_index"],
+            [
+                "match_roster_scan_faces.scan_id",
+                "match_roster_scan_faces.face_index",
+            ],
+            name="fk_match_roster_scan_manual_review_decisions_face",
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "outcome IN ('belongs_to_team', 'does_not_belong_to_team', "
+            "'inconclusive')",
+            name="ck_match_roster_scan_manual_review_decisions_outcome",
+        ),
+        CheckConstraint(
+            "(outcome = 'belongs_to_team' AND player_id IS NOT NULL "
+            "AND player_name_snapshot IS NOT NULL "
+            "AND char_length(trim(player_name_snapshot)) > 0) OR "
+            "(outcome IN ('does_not_belong_to_team', 'inconclusive') "
+            "AND player_id IS NULL AND player_name_snapshot IS NULL)",
+            name=(
+                "ck_match_roster_scan_manual_review_decisions_player_fields"
+            ),
+        ),
+    )
+
+    scan_id = db.Column(db.Integer, primary_key=True)
+    face_index = db.Column(db.Integer, primary_key=True)
+    outcome = db.Column(db.String(30), nullable=False)
+    player_id = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "players.id",
+            ondelete="RESTRICT",
+            name=(
+                "fk_match_roster_scan_manual_review_decisions_player_id_players"
+            ),
+        ),
+        nullable=True,
+    )
+    player_name_snapshot = db.Column(db.String(100), nullable=True)
+    created_at = db.Column(
+        db.DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    face = db.relationship(
+        "MatchRosterScanFace",
+        back_populates="manual_review_decision",
+    )
+    player = db.relationship(
+        "Player",
+        back_populates="manual_review_decisions",
     )
 
 

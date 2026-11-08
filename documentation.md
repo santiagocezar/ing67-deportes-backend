@@ -741,8 +741,70 @@ Content-Disposition ni soporte de rangos.
 En o después del vencimiento, las revisiones aún `pending` pasan a `expired`, sus campos
 privados de imagen se limpian y el archivo se elimina mediante el flujo recuperable
 `.deleting`. La reconciliación ocurre antes de lecturas protegidas de historial/evidencia
-y de escrituras de escaneo; no requiere scheduler. Una revisión `resolved` será cerrada
-por el flujo posterior de validación manual y tampoco permite descargar evidencia.
+y de escrituras de escaneo; no requiere scheduler. Una revisión `resolved` tampoco
+permite descargar evidencia.
+
+## Revisión manual histórica y estado de auditoría
+
+```http
+PUT /roster-scans/{scan_id}/manual-review
+GET /manual-reviews?status=pending&page=1
+GET /matches/{match_id}/manual-review-status
+Authorization: Bearer <access-token>
+```
+
+Una revisión pendiente se cierra una única vez. Solamente el árbitro asignado al partido
+puede enviar el `PUT`; un administrador puede consultar la evidencia privada y los
+metadatos, pero no crear, editar, reabrir ni borrar decisiones manuales. El cuerpo es un
+objeto JSON estricto con una decisión por cada cara cuyo resultado automático es
+`unknown`:
+
+```json
+{
+  "decisions": [
+    {"face_index": 0, "outcome": "belongs_to_team", "player_id": 21},
+    {"face_index": 2, "outcome": "does_not_belong_to_team"},
+    {"face_index": 5, "outcome": "inconclusive"}
+  ]
+}
+```
+
+`belongs_to_team` exige un `player_id` que pertenezca al plantel histórico congelado de
+la competición para el equipo seleccionado en el escaneo; no puede repetirse para dos
+caras. `does_not_belong_to_team` e `inconclusive` no admiten `player_id`. La operación
+valida todos los índices antes de escribir y es atómica: rechaza listas parciales,
+índices repetidos, reconocidos o inexistentes, jugadores fuera de ese plantel y una
+revisión no pendiente. `400` corresponde a JSON ausente, mal formado o que no sea un
+objeto; campos, tipos y campos extra responden `422`; las reglas de revisión, plantel o
+vencimiento responden `409`.
+
+La conclusión manual no cambia el estado automático `unknown`, la caja, los conteos, los
+campos de reconocimiento ni las instantáneas de sanciones. Cada decisión guarda su
+resultado y fecha; una pertenencia también conserva el identificador del jugador y su
+nombre al momento de resolverla. La revisión guarda el árbitro y la fecha de resolución.
+Al confirmarse, se elimina la referencia de la imagen privada y se solicita su borrado
+recuperable. Si el último paso de filesystem falla después del commit, la conclusión
+auditada se conserva y `reconcile-match-scan-photos` completa el estado `.deleting`.
+
+El `PUT` sólo funciona mientras la revisión sea `pending` y antes de su `expires_at`.
+En el límite exacto o después de él, la revisión se reconcilia a `expired`, borra la
+evidencia y rechaza el intento. Ni las sanciones ni la planilla del partido se consultan,
+crean o modifican en este flujo.
+
+`GET /manual-reviews` usa páginas fijas de 25. Un administrador ve todas las revisiones;
+un árbitro únicamente las de sus partidos asignados. `status` acepta `pending`,
+`resolved`, `expired` o `all` (por defecto `pending`). Cada elemento contiene sólo la
+competición (`id`, `name`), partido (`id`, horario, estado), equipo seleccionado (`id`,
+`name`), escaneo (`id`, creación), cantidad de caras desconocidas, estado y vencimiento.
+No expone una URL, bytes, referencia de almacenamiento ni metadatos de filesystem de la
+evidencia.
+
+`GET /matches/{match_id}/manual-review-status` sólo admite administrador o árbitro
+asignado. Devuelve `requires_biometric_audit` y los conteos seguros de revisiones
+`pending`, `resolved` y `expired`. El flag se deriva, no se persiste: vale `true` si al
+menos una revisión pendiente no venció, se vuelve `false` cuando todas están resueltas o
+vencidas, y una futura exploración consentida con una cara desconocida puede activarlo de
+nuevo. No cambia la programación ni el estado normal del partido.
 
 ## Historial protegido de escaneos de plantel
 
@@ -767,10 +829,12 @@ El detalle y cada elemento del historial conservan el conteo esperado, detectado
 reconocido, la advertencia de conteo no bloqueante, cajas de caras, identidad y nombre
 instantáneo cuando se reconoció un jugador, porcentaje, estado e instantáneas
 congeladas de sanciones. Cuando corresponde, incluyen sólo el resumen seguro
-`manual_review` (`status`, `expires_at`). Nunca devuelven embeddings, referencias o URL
-de la imagen grupal, bytes de imagen, nombres internos de archivo ni detalles de la
-base. Una vista previa futura de un jugador reconocido debe usar la API ya existente de
-fotos del jugador; no forma parte ni altera este historial.
+`manual_review`: estado, vencimiento, árbitro/fecha de resolución y, sólo después de
+resolverla, decisiones históricas (`face_index`, resultado, jugador y nombre instantáneo
+si corresponde, fecha). Nunca devuelven embeddings, referencias o URL de la imagen
+grupal, bytes de imagen, nombres internos de archivo ni detalles de la base. Una vista
+previa futura de un jugador reconocido debe usar la API ya existente de fotos del
+jugador; no forma parte ni altera este historial.
 
 ## Sanciones globales de jugadores
 
@@ -941,7 +1005,15 @@ Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not
 `photo_storage_unavailable`. En evidencia de escaneos, una confirmación ausente o falsa
 devuelve `422 validation_error` con detalle `manual_review_confirmation_required`;
 `scan_forbidden` y `group_image_not_available` no revelan rutas, nombres internos ni
-estado de archivos privados.
+estado de archivos privados. La revisión histórica usa
+`manual_review_referee_required` para un escritor no asignado,
+`manual_review_forbidden` para una lectura no autorizada,
+`manual_review_not_found` para un escaneo sin revisión,
+`manual_review_closed` para una revisión resuelta o vencida,
+`manual_review_decisions_incomplete`, `duplicate_manual_review_face`,
+`duplicate_manual_review_player` y `manual_review_player_not_in_roster` para reglas
+de cierre atómico. Una falla temporal de base o almacenamiento durante este flujo usa
+`manual_review_unavailable` sin exponer datos privados.
 
 ## OpenAPI y Hoppscotch
 
@@ -990,6 +1062,10 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 - `b6e7f8a9b0c1` agrega las revisiones manuales consentidas de evidencia privada,
   limpia referencias históricas sin confirmación y deja sus archivos para la
   reconciliación segura del almacenamiento local.
+- `c9d0e1f2a3b4` agrega decisiones manuales históricas por cara desconocida y el
+  auditor de resolución de la revisión, con restricciones de integridad para el
+  jugador seleccionado y su nombre instantáneo; además une las ramas de migración
+  pendientes para mantener una única cabecera Alembic.
 
 Los archivos de las fotos no están en PostgreSQL sino en `PLAYER_PHOTOS_DIR`. Hacer
 downgrade de `29ab530e58fc` elimina la tabla, pero no borra esos archivos.

@@ -136,6 +136,13 @@ habían guardado sin confirmación se limpian en la migración; ejecutar
 `reconcile-match-scan-photos` después del upgrade elimina sus archivos huérfanos de
 forma segura.
 
+La migración `c9d0e1f2a3b4` agrega las decisiones terminales de validación manual,
+el árbitro y fecha de resolución. Aplicar `upgrade-db` antes de usar
+`PUT /roster-scans/{scan_id}/manual-review`; al resolver una revisión se limpia su
+referencia privada y el comando de reconciliación también puede completar el borrado
+recuperable de su evidencia. También unifica las cabeceras de migración de escaneos y
+fotos de referencia para conservar una sola revisión Alembic final.
+
 La migración `d4e5f6a7b8c9` agrega la marca de referencia inicial de cada jugador:
 para fotos ya existentes selecciona de forma determinista la fila de menor ID. Aplicar
 `upgrade-db` antes de usar la validación de identidad en cargas posteriores.

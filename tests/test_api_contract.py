@@ -567,7 +567,10 @@ class ApiContractTests(unittest.TestCase):
                 "/matches/{match_id}/teams/{team_id}/roster-scans",
                 "/matches/{match_id}/teams/{team_id}/roster-scans/preview",
                 "/roster-scans/{scan_id}",
+                "/roster-scans/{scan_id}/manual-review",
                 "/roster-scans/{scan_id}/group-image",
+                "/manual-reviews",
+                "/matches/{match_id}/manual-review-status",
                 "/matches/{match_id}/players/{player_id}/sanctions",
                 "/players/{player_id}/sanctions",
                 "/sanctions/{sanction_id}",
@@ -582,8 +585,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 48)
-        self.assertEqual(len(set(operation_ids)), 48)
+        self.assertEqual(len(operation_ids), 51)
+        self.assertEqual(len(set(operation_ids)), 51)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -624,6 +627,22 @@ class ApiContractTests(unittest.TestCase):
         )
         self.assertIn(
             "MatchRosterScanPreviewResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewDecisionResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewListResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchManualReviewStatusResponse",
             contract["components"]["schemas"],
         )
         self.assertIn(

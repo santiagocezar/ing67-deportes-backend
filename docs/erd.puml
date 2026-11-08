@@ -184,6 +184,8 @@ entity "match_roster_scan_manual_reviews" as match_roster_scan_manual_reviews {
   --
   * status : VARCHAR(20) <<CHECK>>
   * expires_at : TIMESTAMPTZ
+  resolved_by_user_id : INTEGER <<FK>>
+  resolved_at : TIMESTAMPTZ
   * created_at : TIMESTAMPTZ
 }
 
@@ -201,6 +203,16 @@ entity "match_roster_scan_faces" as match_roster_scan_faces {
   * status : VARCHAR(40) <<CHECK>>
   --
   UQ (scan_id, face_index, player_id)
+}
+
+entity "match_roster_scan_manual_review_decisions" as match_roster_scan_manual_review_decisions {
+  * scan_id : INTEGER <<PK, FK>>
+  * face_index : INTEGER <<PK, FK>>
+  --
+  * outcome : VARCHAR(30) <<CHECK>>
+  player_id : INTEGER <<FK>>
+  player_name_snapshot : VARCHAR(100)
+  * created_at : TIMESTAMPTZ
 }
 
 entity "match_roster_scan_face_sanctions" as match_roster_scan_face_sanctions {
@@ -243,8 +255,11 @@ matches ||--o{ match_roster_scans : scanned
 teams ||--o{ match_roster_scans : selected_for_scan
 users ||--o{ match_roster_scans : records
 match_roster_scans ||--o| match_roster_scan_manual_reviews : may_retain
+users ||--o{ match_roster_scan_manual_reviews : resolves
 match_roster_scans ||--|{ match_roster_scan_faces : contains
 players ||--o{ match_roster_scan_faces : recognized_as
+match_roster_scan_faces ||--o| match_roster_scan_manual_review_decisions : manually_concluded
+players ||--o{ match_roster_scan_manual_review_decisions : manually_selected
 match_roster_scan_faces ||--|{ match_roster_scan_face_sanctions : snapshots
 player_sanctions ||--o{ match_roster_scan_face_sanctions : references
 
@@ -354,6 +369,7 @@ note right of match_roster_scan_manual_reviews
   pending requires private unknown-face evidence (service rule)
   expires_at snapshots Match.ends_at + 2 hours
   expiry clears the image reference and removes the local file
+  resolved requires reviewer and timestamp; pending/expired leave both null
 end note
 
 note right of match_roster_scan_faces
@@ -361,6 +377,14 @@ note right of match_roster_scan_faces
   recognized states require Player and percentage (0..100)
   unknown state has no recognition fields
   status determines presentation colour; no colour is stored
+end note
+
+note right of match_roster_scan_manual_review_decisions
+  one immutable terminal decision per automated unknown face (service rule)
+  outcome IN ('belongs_to_team', 'does_not_belong_to_team', 'inconclusive')
+  membership stores a Player and nonblank name snapshot; other outcomes store neither
+  selected Player must belong to the frozen selected-Team competition roster
+  Player and face deletion are restricted; no sanction fields are copied
 end note
 
 note right of match_roster_scan_face_sanctions
