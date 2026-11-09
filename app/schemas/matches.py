@@ -30,7 +30,7 @@ class MatchUpdateRequest(ApiRequest):
         if starts_at is not None and value <= starts_at:
             raise PydanticCustomError(
                 "match_date_range_invalid",
-                "Match end date must be later than its start date.",
+                "La fecha de finalización del partido debe ser posterior a la fecha de inicio.",
             )
         return value
 

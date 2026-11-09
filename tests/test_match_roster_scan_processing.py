@@ -1,16 +1,23 @@
 import io
+import importlib
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import cv2
 import numpy as np
 from flask_jwt_extended import create_access_token
+from sqlalchemy import CheckConstraint
+from sqlalchemy.dialects import postgresql
+from sqlalchemy.schema import CreateTable
 from werkzeug.datastructures import FileStorage, MultiDict
 from werkzeug.test import encode_multipart
 
 from app.app import create_app
+from app.models import MatchRosterScanFace
 from app.services.match_roster_scan_processing import (
     AMBIGUITY_DISTANCE_MARGIN,
     MAX_SCAN_IMAGE_BYTES,
@@ -21,6 +28,7 @@ from app.services.match_roster_scan_processing import (
     _match_percentage,
     _processed_faces,
     _validate_group_image,
+    preview_match_roster_scan,
     process_match_roster_scan,
 )
 from app.services.match_roster_scans import (
@@ -31,6 +39,7 @@ from app.services.match_roster_scans import (
     _scan_read_options,
     list_match_roster_scans,
 )
+from app.services.match_scan_photo_files import StoredScanImage
 
 
 TEST_CONFIG = {
@@ -80,6 +89,7 @@ def _scan(*, faces=None, expected_players=2, unique_players=1):
         created_at=datetime(2026, 10, 15, 12, tzinfo=timezone.utc),
         faces=faces,
         group_image_file_name="must-not-leak",
+        manual_review=None,
     )
 
 
@@ -108,8 +118,11 @@ class MatchRosterScanRouteTests(unittest.TestCase):
     def _bearer(token):
         return {"Authorization": f"Bearer {token}"}
 
-    def _post(self, fields=None, *, token=None):
-        values = fields or {"photo": (PNG_BYTES, "scan.png")}
+    def _post(self, fields=None, *, token=None, preview=False):
+        values = fields or {
+            "photo": (PNG_BYTES, "scan.png"),
+            "retain_for_manual_review": "true",
+        }
         encoded_fields = MultiDict()
         entries = (
             values.items(multi=True)
@@ -126,8 +139,11 @@ class MatchRosterScanRouteTests(unittest.TestCase):
                 ),
             )
         boundary, body = encode_multipart(encoded_fields)
+        route = "/matches/3/teams/2/roster-scans"
+        if preview:
+            route = f"{route}/preview"
         return self.client.post(
-            "/matches/3/teams/2/roster-scans",
+            route,
             headers=self._bearer(token or self.admin_token),
             data=body,
             content_type=f'multipart/form-data; boundary="{boundary}"',
@@ -148,6 +164,7 @@ class MatchRosterScanRouteTests(unittest.TestCase):
         self.assertNotIn("embedding", rendered)
         self.assertNotIn("must-not-leak", rendered)
         process.assert_called_once()
+        self.assertTrue(process.call_args.kwargs["retain_for_manual_review"])
 
     def test_referee_is_allowed_to_reach_the_service(self):
         with patch(
@@ -178,6 +195,94 @@ class MatchRosterScanRouteTests(unittest.TestCase):
         self.assertEqual(missing.status_code, 422)
         self.assertEqual(extra.status_code, 422)
         process.assert_not_called()
+
+    def test_final_scan_requires_explicit_true_retention_confirmation(self):
+        with patch(
+            "app.routes.match_roster_scans.process_match_roster_scan"
+        ) as process:
+            missing = self._post({"photo": (PNG_BYTES, "scan.png")})
+            false = self._post(
+                {
+                    "photo": (PNG_BYTES, "scan.png"),
+                    "retain_for_manual_review": "false",
+                }
+            )
+            unknown = self._post(
+                {
+                    "photo": (PNG_BYTES, "scan.png"),
+                    "retain_for_manual_review": "true",
+                    "note": "unexpected",
+                }
+            )
+
+        self.assertEqual(missing.status_code, 422)
+        self.assertEqual(false.status_code, 422)
+        self.assertEqual(unknown.status_code, 422)
+        process.assert_not_called()
+
+    def test_preview_uses_a_photo_only_form_and_returns_no_history_identifiers(self):
+        preview = SimpleNamespace(
+            match_id=3,
+            team_id=2,
+            expected_players=2,
+            detected_faces=1,
+            unique_recognized_players=0,
+            faces=[
+                SimpleNamespace(
+                    face_index=0,
+                    top=10,
+                    right=210,
+                    bottom=210,
+                    left=10,
+                    status="unknown",
+                    player_id=None,
+                    player_name_snapshot=None,
+                    match_percentage=None,
+                    sanctions=(),
+                )
+            ],
+        )
+        with patch(
+            "app.routes.match_roster_scans.preview_match_roster_scan",
+            return_value=preview,
+        ) as preview_service:
+            response = self._post(
+                {"photo": (PNG_BYTES, "scan.png")}, preview=True
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["faces"][0]["status"], "unknown")
+        self.assertNotIn("id", payload)
+        self.assertNotIn("created_at", payload)
+        preview_service.assert_called_once()
+
+    def test_group_image_is_protected_and_disables_cache_validators(self):
+        with tempfile.TemporaryDirectory() as directory:
+            image_path = Path(directory) / "private-image"
+            image_path.write_bytes(PNG_BYTES)
+            with patch(
+                "app.routes.match_roster_scans.get_match_roster_scan_group_image",
+                return_value=StoredScanImage(
+                    path=image_path,
+                    content_type="image/png",
+                ),
+            ) as image_service:
+                response = self.client.get(
+                    "/roster-scans/7/group-image",
+                    headers=self._bearer(self.referee_token),
+                )
+                response.close()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/png")
+        self.assertEqual(response.headers["Cache-Control"], "no-store")
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertNotIn("ETag", response.headers)
+        self.assertNotIn("Last-Modified", response.headers)
+        self.assertNotIn("Content-Disposition", response.headers)
+        self.assertNotIn("private-image", response.headers.get("Location", ""))
+        self.assertEqual(image_service.call_args.kwargs["actor_role"], "referee")
 
     def test_repeated_photo_and_oversized_transport_bodies_are_rejected(self):
         repeated = MultiDict(
@@ -367,7 +472,7 @@ class MatchRosterScanHistoryServiceTests(unittest.TestCase):
         self.assertEqual(error.exception.status_code, 403)
 
     def test_history_load_options_prevent_per_face_or_per_sanction_queries(self):
-        self.assertEqual(len(_scan_read_options()), 2)
+        self.assertEqual(len(_scan_read_options()), 4)
 
     def test_history_uses_stable_bounded_query_and_reports_out_of_range_page(self):
         match = SimpleNamespace(id=3, team_1_id=2, team_2_id=4, referee_id=2)
@@ -384,6 +489,9 @@ class MatchRosterScanHistoryServiceTests(unittest.TestCase):
             patch(
                 "app.services.match_roster_scans.db.session.get",
                 return_value=SimpleNamespace(id=2),
+            ),
+            patch(
+                "app.services.match_roster_scans.reconcile_expired_match_roster_scan_reviews"
             ),
         ):
             result = list_match_roster_scans(
@@ -550,7 +658,13 @@ class MatchRosterScanRecognitionTests(unittest.TestCase):
         self.assertEqual(faces[3].sanctions[0].sanction_id, 9)
 
     def test_unknown_outcome_retains_image_but_known_only_scan_does_not(self):
-        match = SimpleNamespace(id=3, competition_id=1)
+        match = SimpleNamespace(
+            id=3,
+            competition_id=1,
+            competition=SimpleNamespace(
+                sport=SimpleNamespace(max_players_in_game=2)
+            ),
+        )
         known_face = ScanFaceResult(0, 10, 210, 210, 10, "declared_eligible", 1, "One", 80)
         unknown_face = ScanFaceResult(0, 10, 210, 210, 10, "unknown")
         with (
@@ -574,11 +688,109 @@ class MatchRosterScanRecognitionTests(unittest.TestCase):
                 "app.services.match_roster_scan_processing.record_match_roster_scan",
                 return_value=_scan(),
             ) as record,
+            patch(
+                "app.services.match_roster_scan_processing.reconcile_expired_match_roster_scan_reviews"
+            ),
         ):
-            process_match_roster_scan(3, 2, actor_user_id=1, actor_role="administrator", content=PNG_BYTES)
-            process_match_roster_scan(3, 2, actor_user_id=1, actor_role="administrator", content=PNG_BYTES)
+            process_match_roster_scan(
+                3,
+                2,
+                actor_user_id=1,
+                actor_role="administrator",
+                content=PNG_BYTES,
+                retain_for_manual_review=True,
+            )
+            process_match_roster_scan(
+                3,
+                2,
+                actor_user_id=1,
+                actor_role="administrator",
+                content=PNG_BYTES,
+                retain_for_manual_review=True,
+            )
         self.assertIsNone(record.call_args_list[0].kwargs["group_image"])
         self.assertEqual(record.call_args_list[1].kwargs["group_image"].content, PNG_BYTES)
+
+    def test_preview_uses_compute_only_processing_and_rolls_back_request_state(self):
+        unknown_face = ScanFaceResult(0, 10, 210, 210, 10, "unknown")
+        computation = SimpleNamespace(
+            match_id=3,
+            team_id=2,
+            expected_players=2,
+            faces=(unknown_face,),
+        )
+        with (
+            patch(
+                "app.services.match_roster_scan_processing._compute_match_roster_scan",
+                return_value=computation,
+            ) as compute,
+            patch(
+                "app.services.match_roster_scan_processing.record_match_roster_scan"
+            ) as record,
+            patch(
+                "app.services.match_roster_scan_processing.db.session.rollback"
+            ) as rollback,
+        ):
+            preview = preview_match_roster_scan(
+                3,
+                2,
+                actor_user_id=1,
+                actor_role="administrator",
+                content=PNG_BYTES,
+            )
+
+        self.assertEqual(preview.detected_faces, 1)
+        self.assertEqual(preview.faces[0].status, "unknown")
+        compute.assert_called_once()
+        record.assert_not_called()
+        rollback.assert_called_once()
+
+    def test_final_processing_rejects_missing_retention_confirmation_before_work(self):
+        with self.assertRaisesRegex(
+            MatchRosterScanServiceError,
+            "Explicit retention confirmation",
+        ):
+            process_match_roster_scan(
+                3,
+                2,
+                actor_user_id=1,
+                actor_role="administrator",
+                content=PNG_BYTES,
+            )
+
+
+class MatchRosterScanSqlIdentifierTests(unittest.TestCase):
+    def test_face_box_constraints_quote_postgresql_reserved_identifiers(self):
+        ddl = str(
+            CreateTable(MatchRosterScanFace.__table__).compile(
+                dialect=postgresql.dialect()
+            )
+        )
+
+        self.assertIn('CHECK ("right" >= 0)', ddl)
+        self.assertIn('CHECK ("left" >= 0)', ddl)
+        self.assertIn('CHECK ("right" > "left" AND bottom > top)', ddl)
+
+    def test_foundation_migration_quotes_reserved_face_box_identifiers(self):
+        migration = importlib.import_module(
+            "migrations.versions.a3c4e5f6a7b8_add_match_roster_scans"
+        )
+        with patch.object(migration, "op") as operation:
+            migration.upgrade()
+
+        face_table_call = next(
+            call
+            for call in operation.create_table.call_args_list
+            if call.args[0] == "match_roster_scan_faces"
+        )
+        checks = {
+            str(constraint.sqltext)
+            for constraint in face_table_call.args[1:]
+            if isinstance(constraint, CheckConstraint)
+        }
+        self.assertIn('"right" >= 0', checks)
+        self.assertIn('"left" >= 0', checks)
+        self.assertIn('"right" > "left" AND bottom > top', checks)
 
 
 if __name__ == "__main__":

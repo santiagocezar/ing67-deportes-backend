@@ -1,10 +1,12 @@
-"""Persistence for already-computed, immutable Match roster scan results."""
+"""Persistence and private-evidence lifecycle for Match roster scans."""
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Sequence
 
+from flask import current_app
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload, selectinload
 
 from ..extensions import db
@@ -16,12 +18,19 @@ from ..models import (
     MatchRosterScan,
     MatchRosterScanFace,
     MatchRosterScanFaceSanction,
+    MatchRosterScanManualReview,
     Team,
 )
-from .competition_state import utc_now
+from .competition_state import as_utc, utc_now
 from .match_scan_photo_files import (
     ScanImageStorageError,
+    StagedScanImageDeletion,
+    StoredScanImage,
+    finalize_scan_image_deletions,
     remove_scan_file_best_effort,
+    restore_scan_image_deletions,
+    safe_scan_photo_path,
+    stage_scan_image_file,
     write_pending_scan_image,
 )
 from .matches import reconcile_matches
@@ -31,10 +40,11 @@ SANCTIONED_SCAN_FACE_STATUSES = frozenset(
     {"declared_sanctioned", "team_member_undeclared_sanctioned"}
 )
 ROSTER_SCANS_PER_PAGE = 25
+MANUAL_REVIEW_RETENTION = timedelta(hours=2)
 
 
 class MatchRosterScanServiceError(Exception):
-    """Safe business-rule error for future scan processing callers."""
+    """Safe business-rule error for Match roster scan callers."""
 
     def __init__(self, code: str, message: str, status_code: int = 409):
         super().__init__(message)
@@ -234,13 +244,17 @@ def _authorize_scan(match: Match, actor_user_id: int, actor_role: str) -> None:
 
 
 def _scan_read_options():
-    """Load immutable face snapshots without a query per face or sanction."""
+    """Load scan data without a query per face, sanction, or review."""
     return (
         selectinload(MatchRosterScan.faces)
         .joinedload(MatchRosterScanFace.player),
+        selectinload(MatchRosterScan.faces).joinedload(
+            MatchRosterScanFace.manual_review_decision
+        ),
         selectinload(MatchRosterScan.faces).selectinload(
             MatchRosterScanFace.sanction_snapshots
         ),
+        joinedload(MatchRosterScan.manual_review),
     )
 
 
@@ -272,6 +286,114 @@ def _validate_readable_match_team(match: Match, team_id: int) -> None:
         )
 
 
+def _manual_review_expiry(match: Match) -> datetime:
+    if (
+        match.ends_at is None
+        or match.ends_at.tzinfo is None
+        or match.ends_at.utcoffset() is None
+    ):
+        raise MatchRosterScanServiceError(
+            "scan_window_closed",
+            "The Match does not have a valid scan review deadline.",
+        )
+    return as_utc(match.ends_at) + MANUAL_REVIEW_RETENTION
+
+
+def _stage_expired_reviews_for_locked_match(
+    match: Match,
+    current_time: datetime,
+) -> tuple[list[StagedScanImageDeletion], int]:
+    reviews = list(
+        db.session.execute(
+            db.select(MatchRosterScanManualReview)
+            .join(MatchRosterScanManualReview.scan)
+            .options(joinedload(MatchRosterScanManualReview.scan))
+            .where(
+                MatchRosterScan.match_id == match.id,
+                MatchRosterScanManualReview.status == "pending",
+                MatchRosterScanManualReview.expires_at <= current_time,
+            )
+            .with_for_update(of=MatchRosterScanManualReview)
+        ).scalars()
+    )
+    staged: list[StagedScanImageDeletion] = []
+    try:
+        for review in reviews:
+            scan = review.scan
+            staged_file = stage_scan_image_file(scan)
+            if staged_file is not None:
+                staged.append(staged_file)
+            elif scan.group_image_file_name is not None:
+                current_app.logger.warning(
+                    "No private evidence file exists for expiring Match scan %s",
+                    scan.id,
+                )
+            scan.group_image_file_name = None
+            scan.group_image_content_type = None
+            review.status = "expired"
+    except Exception:
+        restore_scan_image_deletions(staged)
+        raise
+    return staged, len(reviews)
+
+
+def _reconcile_expired_reviews_for_match(
+    match_id: int,
+    *,
+    current_time: datetime,
+) -> int:
+    staged: list[StagedScanImageDeletion] = []
+    try:
+        match = _lock_match(match_id)
+        staged, expired_count = _stage_expired_reviews_for_locked_match(
+            match,
+            current_time,
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        restore_scan_image_deletions(staged)
+        raise
+    finalize_scan_image_deletions(staged)
+    return expired_count
+
+
+def reconcile_expired_match_roster_scan_reviews(
+    match_id: int | None = None,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Expire due reviews and delete their private evidence recoverably."""
+    current_time = as_utc(now or utc_now())
+    if match_id is not None:
+        return _reconcile_expired_reviews_for_match(
+            match_id,
+            current_time=current_time,
+        )
+
+    due_match_ids = list(
+        db.session.execute(
+            db.select(MatchRosterScan.match_id)
+            .join(
+                MatchRosterScanManualReview,
+                MatchRosterScanManualReview.scan_id == MatchRosterScan.id,
+            )
+            .where(
+                MatchRosterScanManualReview.status == "pending",
+                MatchRosterScanManualReview.expires_at <= current_time,
+            )
+            .distinct()
+        ).scalars()
+    )
+    expired_count = 0
+    for due_match_id in due_match_ids:
+        expired_count += _reconcile_expired_reviews_for_match(
+            due_match_id,
+            current_time=current_time,
+        )
+    return expired_count
+
+
 def list_match_roster_scans(
     match_id: int,
     team_id: int,
@@ -280,11 +402,12 @@ def list_match_roster_scans(
     actor_user_id: int,
     actor_role: str,
 ) -> MatchRosterScanPage:
-    """Return a bounded historical page after Match-side authorization."""
+    """Return a bounded historical page after authorization and expiry cleanup."""
     match = _get_readable_match(
         match_id, actor_user_id=actor_user_id, actor_role=actor_role
     )
     _validate_readable_match_team(match, team_id)
+    reconcile_expired_match_roster_scan_reviews(match.id)
     filters = (
         MatchRosterScan.match_id == match.id,
         MatchRosterScan.team_id == team_id,
@@ -316,15 +439,19 @@ def list_match_roster_scans(
     )
 
 
-def get_match_roster_scan(
-    scan_id: int, *, actor_user_id: int, actor_role: str
-) -> MatchRosterScan:
-    """Return one immutable scan only when its Match is readable by the actor."""
-    scan = db.session.execute(
+def _load_match_roster_scan(scan_id: int) -> MatchRosterScan | None:
+    return db.session.execute(
         db.select(MatchRosterScan)
         .options(*_scan_read_options())
         .where(MatchRosterScan.id == scan_id)
     ).scalar_one_or_none()
+
+
+def get_match_roster_scan(
+    scan_id: int, *, actor_user_id: int, actor_role: str
+) -> MatchRosterScan:
+    """Return one immutable scan only when its Match is readable by the actor."""
+    scan = _load_match_roster_scan(scan_id)
     if scan is None:
         raise MatchRosterScanServiceError(
             "roster_scan_not_found", "The roster scan does not exist.", 404
@@ -332,7 +459,65 @@ def get_match_roster_scan(
     _get_readable_match(
         scan.match_id, actor_user_id=actor_user_id, actor_role=actor_role
     )
-    return scan
+    reconcile_expired_match_roster_scan_reviews(scan.match_id)
+    refreshed_scan = _load_match_roster_scan(scan_id)
+    if refreshed_scan is None:
+        raise MatchRosterScanServiceError(
+            "roster_scan_not_found", "The roster scan does not exist.", 404
+        )
+    return refreshed_scan
+
+
+def get_match_roster_scan_group_image(
+    scan_id: int,
+    *,
+    actor_user_id: int,
+    actor_role: str,
+) -> StoredScanImage:
+    """Return private evidence only after Match-side authorization and expiry."""
+    scan = db.session.execute(
+        db.select(MatchRosterScan)
+        .options(
+            joinedload(MatchRosterScan.match),
+            joinedload(MatchRosterScan.manual_review),
+        )
+        .where(MatchRosterScan.id == scan_id)
+    ).scalar_one_or_none()
+    if scan is None:
+        raise MatchRosterScanServiceError(
+            "roster_scan_not_found", "The roster scan does not exist.", 404
+        )
+    _authorize_scan(scan.match, actor_user_id, actor_role)
+    reconcile_expired_match_roster_scan_reviews(scan.match_id)
+    scan = db.session.execute(
+        db.select(MatchRosterScan)
+        .options(joinedload(MatchRosterScan.manual_review))
+        .where(MatchRosterScan.id == scan_id)
+    ).scalar_one_or_none()
+    review = scan.manual_review if scan is not None else None
+    if (
+        review is None
+        or review.status != "pending"
+        or scan.group_image_file_name is None
+        or scan.group_image_content_type is None
+    ):
+        raise MatchRosterScanServiceError(
+            "group_image_not_available",
+            "The retained group image is not available.",
+            404,
+        )
+    path = safe_scan_photo_path(scan.group_image_file_name)
+    if path.is_symlink() or not path.is_file():
+        current_app.logger.error(
+            "Retained private evidence is unavailable for Match scan %s",
+            scan.id,
+        )
+        raise MatchRosterScanServiceError(
+            "group_image_not_available",
+            "The retained group image is not available.",
+            404,
+        )
+    return StoredScanImage(path=path, content_type=scan.group_image_content_type)
 
 
 def validate_match_roster_scan_target(
@@ -372,12 +557,33 @@ def _validate_match_window(match: Match) -> None:
     if (
         match.status == "finished"
         and match.ends_at is not None
-        and match.ends_at >= now - timedelta(hours=2)
+        and match.ends_at > now - MANUAL_REVIEW_RETENTION
     ):
         return
     raise MatchRosterScanServiceError(
         "scan_window_closed",
-        "Scans are allowed only during a Match or within two hours after it ends.",
+        "Scans are allowed only during a Match or until two hours after it ends.",
+    )
+
+
+def _create_pending_manual_review(
+    scan: MatchRosterScan,
+    match: Match,
+    faces: Sequence[ScanFaceResult],
+) -> None:
+    if (
+        scan.group_image_file_name is None
+        or scan.group_image_content_type is None
+        or not any(face.status == "unknown" for face in faces)
+    ):
+        raise MatchRosterScanServiceError(
+            "invalid_manual_review_evidence",
+            "A pending manual review requires unknown-face private evidence.",
+            422,
+        )
+    scan.manual_review = MatchRosterScanManualReview(
+        status="pending",
+        expires_at=_manual_review_expiry(match),
     )
 
 
@@ -386,11 +592,19 @@ def _compensate_committed_scan(scan_id: int | None) -> bool:
         return False
     try:
         db.session.execute(
+            db.delete(MatchRosterScanManualReview).where(
+                MatchRosterScanManualReview.scan_id == scan_id
+            )
+        )
+        db.session.execute(
             db.delete(MatchRosterScan).where(MatchRosterScan.id == scan_id)
         )
         db.session.commit()
-    except Exception:
+    except SQLAlchemyError:
         db.session.rollback()
+        current_app.logger.error(
+            "Could not compensate a committed Match scan after file failure"
+        )
         return False
     return True
 
@@ -404,13 +618,14 @@ def record_match_roster_scan(
     actor_role: str,
     group_image: ScanGroupImage | None = None,
 ) -> MatchRosterScan:
-    """Persist a completed scan without running recognition or sanction logic."""
+    """Persist a completed scan and a review only for unknown-face evidence."""
     immutable_faces = _validate_scan_input(faces, group_image)
     pending_path = final_path = None
     if group_image is not None:
         pending_path, final_path = write_pending_scan_image(group_image.content)
 
     scan_id: int | None = None
+    staged_expired_evidence: list[StagedScanImageDeletion] = []
     try:
         match = validate_match_roster_scan_target(
             match_id,
@@ -418,7 +633,10 @@ def record_match_roster_scan(
             actor_user_id=actor_user_id,
             actor_role=actor_role,
         )
-
+        staged_expired_evidence, _ = _stage_expired_reviews_for_locked_match(
+            match,
+            as_utc(utc_now()),
+        )
         recognized_player_ids = {
             face.player_id
             for face in immutable_faces
@@ -459,23 +677,38 @@ def record_match_roster_scan(
                 for snapshot in face.sanctions
             ]
             scan.faces.append(persisted_face)
+        if group_image is not None:
+            _create_pending_manual_review(scan, match, immutable_faces)
         db.session.add(scan)
         db.session.flush()
         scan_id = scan.id
         db.session.commit()
     except Exception:
         db.session.rollback()
+        restore_scan_image_deletions(staged_expired_evidence)
         if pending_path is not None:
             remove_scan_file_best_effort(pending_path)
         raise
 
+    promotion_error: ScanImageStorageError | None = None
     if pending_path is not None and final_path is not None:
         try:
             pending_path.replace(final_path)
         except OSError as error:
             if _compensate_committed_scan(scan_id):
                 remove_scan_file_best_effort(pending_path)
-            raise ScanImageStorageError(
+            promotion_error = ScanImageStorageError(
                 "The committed Match scan image could not be finalized."
-            ) from error
+            )
+            promotion_error.__cause__ = error
+
+    deletion_error: ScanImageStorageError | None = None
+    try:
+        finalize_scan_image_deletions(staged_expired_evidence)
+    except ScanImageStorageError as error:
+        deletion_error = error
+    if promotion_error is not None:
+        raise promotion_error
+    if deletion_error is not None:
+        raise deletion_error
     return scan

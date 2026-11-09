@@ -8,6 +8,7 @@ from unittest.mock import patch
 from flask_jwt_extended import create_access_token, create_refresh_token
 
 from app.app import create_app
+from app.errors import error_response
 from app.schemas.auth import (
     SignupRequest,
     SignupResponse,
@@ -294,6 +295,65 @@ class ApiContractTests(unittest.TestCase):
         self.assertNotIn("never-return-this-value", serialized)
         self.assertNotIn("also-sensitive", serialized)
 
+    def test_public_error_messages_and_validation_details_are_in_spanish(self):
+        unauthorized = self.client.post("/sports")
+        self.assertEqual(unauthorized.status_code, 401)
+        self.assertEqual(
+            unauthorized.get_json()["error"]["message"],
+            "Se requiere autenticación.",
+        )
+
+        validation = self.client.post("/auth/signup", json={})
+        self.assertEqual(validation.status_code, 422)
+        validation_error = validation.get_json()["error"]
+        self.assertEqual(
+            validation_error["message"],
+            "La solicitud contiene datos no válidos.",
+        )
+        self.assertEqual(
+            validation_error["details"][0]["message"],
+            "Este campo es obligatorio.",
+        )
+
+        missing_route = self.client.get("/ruta-inexistente")
+        self.assertEqual(missing_route.status_code, 404)
+        self.assertEqual(
+            missing_route.get_json()["error"],
+            {
+                "code": "resource_not_found",
+                "message": "El recurso solicitado no existe.",
+            },
+        )
+
+        with self.app.test_request_context():
+            response, status = error_response(
+                "future_error_code",
+                "An English implementation message must not reach clients.",
+                409,
+                details=[
+                    {
+                        "field": "form.photo",
+                        "message": "Exactly one photo file is required.",
+                        "type": "multiple_files",
+                    }
+                ],
+            )
+        self.assertEqual(status, 409)
+        self.assertEqual(
+            response.get_json()["error"],
+            {
+                "code": "future_error_code",
+                "message": "No se pudo procesar la solicitud.",
+                "details": [
+                    {
+                        "field": "form.photo",
+                        "message": "Debe adjuntar exactamente un archivo.",
+                        "type": "multiple_files",
+                    }
+                ],
+            },
+        )
+
     def test_unknown_sport_field_and_boolean_player_limit_return_422(self):
         headers = self._bearer(self.admin_token)
         cases = [
@@ -565,7 +625,12 @@ class ApiContractTests(unittest.TestCase):
                 "/competitions/{competition_id}/matches/randomize",
                 "/matches/{match_id}",
                 "/matches/{match_id}/teams/{team_id}/roster-scans",
+                "/matches/{match_id}/teams/{team_id}/roster-scans/preview",
                 "/roster-scans/{scan_id}",
+                "/roster-scans/{scan_id}/manual-review",
+                "/roster-scans/{scan_id}/group-image",
+                "/manual-reviews",
+                "/matches/{match_id}/manual-review-status",
                 "/matches/{match_id}/players/{player_id}/sanctions",
                 "/players/{player_id}/sanctions",
                 "/sanctions/{sanction_id}",
@@ -580,8 +645,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 46)
-        self.assertEqual(len(set(operation_ids)), 46)
+        self.assertEqual(len(operation_ids), 51)
+        self.assertEqual(len(set(operation_ids)), 51)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],
@@ -619,6 +684,26 @@ class ApiContractTests(unittest.TestCase):
         self.assertIn("MatchResponse", contract["components"]["schemas"])
         self.assertIn(
             "MatchRosterScanResponse", contract["components"]["schemas"]
+        )
+        self.assertIn(
+            "MatchRosterScanPreviewResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewDecisionResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchRosterScanManualReviewListResponse",
+            contract["components"]["schemas"],
+        )
+        self.assertIn(
+            "MatchManualReviewStatusResponse",
+            contract["components"]["schemas"],
         )
         self.assertIn(
             "PlayerSanctionResponse", contract["components"]["schemas"]

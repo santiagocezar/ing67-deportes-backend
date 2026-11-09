@@ -58,11 +58,11 @@ Ejemplo de `422`:
 {
   "error": {
     "code": "validation_error",
-    "message": "Request validation failed.",
+    "message": "La solicitud contiene datos no válidos.",
     "details": [
       {
         "field": "body.name",
-        "message": "Field required",
+        "message": "Este campo es obligatorio.",
         "type": "missing"
       }
     ]
@@ -624,7 +624,7 @@ Los rechazos usan el contrato común de errores. El frontend debe mostrar
 {
   "error": {
     "code": "unsupported_photo_format",
-    "message": "Only PNG and JPG photos are allowed."
+    "message": "Solo se permiten fotos PNG o JPG."
   }
 }
 ```
@@ -661,16 +661,29 @@ despliegue con réplicas, filesystem efímero ni almacenamiento distribuido en e
 ## Procesamiento de escaneos de plantel
 
 ```http
+POST /matches/{match_id}/teams/{team_id}/roster-scans/preview
+Authorization: Bearer <access-token>
+Content-Type: multipart/form-data
+
 POST /matches/{match_id}/teams/{team_id}/roster-scans
 Authorization: Bearer <access-token>
 Content-Type: multipart/form-data
 ```
 
-La solicitud tiene exactamente un archivo, `photo`; campos adicionales o partes
-repetidas responden `422 validation_error`. Un administrador puede escanear cualquiera
-de los equipos del partido y un árbitro sólo un partido que tenga asignado. El partido
-debe estar `in_progress` o haber terminado hace como máximo dos horas; los demás
-estados, un equipo ajeno o una ventana vencida responden `409` sin escribir datos.
+El primer endpoint recibe exactamente un archivo `photo` y calcula una vista previa
+sin crear una fila de escaneo, revisión, archivo temporal, referencia de archivo ni
+dato biométrico durable. El resultado seguro contiene los conteos, cajas, estados,
+jugadores reconocidos, porcentajes e instantáneas de sanciones, pero no `id`, usuario
+creador, fecha, URL, nombre interno ni bytes. El resultado de la vista previa no es
+evidencia histórica y se vuelve a calcular al confirmar.
+
+La operación final recibe exactamente `photo` y el campo de formulario
+`retain_for_manual_review=true`. La confirmación debe ser literalmente `true`; si
+falta, es falsa, se repite o hay campos desconocidos, responde `422`. Un administrador
+puede escanear cualquiera de los equipos del partido y un árbitro sólo un partido que
+tenga asignado. El partido debe estar `in_progress` o dentro de las dos horas posteriores
+a su final; los demás estados, un equipo ajeno o una ventana vencida responden `409` sin
+crear el escaneo solicitado.
 
 La imagen debe contener bytes PNG o JPEG reales, medir entre 320 y 4096 píxeles por
 lado, no superar 12.000.000 píxeles ni 10 MiB. Se inspecciona el encabezado antes de la
@@ -697,15 +710,117 @@ partido; las instantáneas de sanción se guardan junto al resultado. Distancias
 ambiguas, candidatos fuera de umbral, jugadores sin fotos candidatas y una identidad
 repetida en la misma imagen terminan como `unknown`.
 
-La respuesta `201` incluye el escaneo, cajas, estado, jugador reconocido, porcentaje y
-snapshots de sanciones, pero nunca embeddings ni la referencia privada de imagen. Si
-la cantidad de jugadores reconocidos distintos difiere de `expected_players` (la
-capacidad en cancha del deporte), retorna `count_warning`; no infiere quién falta ni
-quién sobra. Si hay alguna cara `unknown`, la imagen grupal se guarda de manera privada
-en `MATCH_SCAN_PHOTOS_DIR`; nunca se expone por HTTP. Una falla de base de datos,
-dependencia facial o almacenamiento responde `503 scan_processing_unavailable` y deja
-sin filas ni archivos el intento completo. No hay interfaz de cámara ni resolución
-manual en este alcance.
+La respuesta final `201` incluye el escaneo, cajas, estado, jugador reconocido,
+porcentaje e instantáneas de sanciones, pero nunca embeddings ni una referencia privada
+de imagen. Si la cantidad de jugadores reconocidos distintos difiere de
+`expected_players` (la capacidad en cancha del deporte), retorna `count_warning`; no
+infiere quién falta ni quién sobra. Si el cálculo final no tiene caras `unknown`, no se
+retiene imagen ni se crea revisión. Si las tiene, la imagen se guarda de manera privada
+en `MATCH_SCAN_PHOTOS_DIR` y se crea, en la misma transacción, una revisión manual
+`pending` que vence en `Match.ends_at + 2 horas`.
+
+Una falla de base de datos, dependencia facial o almacenamiento responde `503
+scan_processing_unavailable` y deja sin filas ni archivos el intento completo. No hay
+interfaz de cámara, endpoint de recortes ni resolución manual de identidad en este
+alcance.
+
+## Evidencia privada y vencimiento
+
+```http
+GET /roster-scans/{scan_id}/group-image
+Authorization: Bearer <access-token>
+```
+
+Sólo un administrador o el árbitro asignado al partido puede descargar la imagen original
+de una revisión `pending`. Otro árbitro recibe `403 scan_forbidden`; un recurso sin imagen
+retenida, resuelto o vencido responde `404 group_image_not_available`. La respuesta
+binaria usa el MIME PNG/JPEG almacenado, `Cache-Control: no-store` y
+`X-Content-Type-Options: nosniff`; no incluye URL, nombre interno, ETag, Last-Modified,
+Content-Disposition ni soporte de rangos.
+
+En o después del vencimiento, las revisiones aún `pending` pasan a `expired`, sus campos
+privados de imagen se limpian y el archivo se elimina mediante el flujo recuperable
+`.deleting`. La reconciliación ocurre antes de lecturas protegidas de historial/evidencia
+y de escrituras de escaneo; no requiere scheduler. Una revisión `resolved` tampoco
+permite descargar evidencia.
+
+## Revisión manual histórica y estado de auditoría
+
+```http
+PUT /roster-scans/{scan_id}/manual-review
+GET /manual-reviews?status=pending&page=1
+GET /matches/{match_id}/manual-review-status
+Authorization: Bearer <access-token>
+```
+
+Una revisión pendiente se cierra una única vez. Solamente el árbitro asignado al partido
+puede enviar el `PUT`; un administrador puede consultar la evidencia privada y los
+metadatos, pero no crear, editar, reabrir ni borrar decisiones manuales. El cuerpo es un
+objeto JSON estricto con una decisión por cada cara cuyo resultado automático es
+`unknown`:
+
+```json
+{
+  "decisions": [
+    {"face_index": 0, "outcome": "belongs_to_team", "player_id": 21},
+    {"face_index": 2, "outcome": "does_not_belong_to_team"},
+    {"face_index": 5, "outcome": "inconclusive"}
+  ]
+}
+```
+
+`belongs_to_team` exige un `player_id` que pertenezca al plantel histórico congelado de
+la competición para el equipo seleccionado en el escaneo; no puede repetirse para dos
+caras. `does_not_belong_to_team` e `inconclusive` no admiten `player_id`. La operación
+valida todos los índices antes de escribir y es atómica: rechaza listas parciales,
+índices repetidos, reconocidos o inexistentes, jugadores fuera de ese plantel y una
+revisión no pendiente. `400` corresponde a JSON ausente, mal formado o que no sea un
+objeto; campos, tipos y campos extra responden `422`; las reglas de revisión, plantel o
+vencimiento responden `409`.
+
+La conclusión manual no cambia el estado automático `unknown`, la caja, los conteos, los
+campos de reconocimiento ni las instantáneas de sanciones. Cada decisión guarda su
+resultado y fecha; una pertenencia también conserva el identificador del jugador y su
+nombre al momento de resolverla. La revisión guarda el árbitro y la fecha de resolución.
+Al confirmarse, se elimina la referencia de la imagen privada y se solicita su borrado
+recuperable. Si el último paso de filesystem falla después del commit, la conclusión
+auditada se conserva y `reconcile-match-scan-photos` completa el estado `.deleting`.
+
+El `PUT` sólo funciona mientras la revisión sea `pending` y antes de su `expires_at`.
+En el límite exacto o después de él, la revisión se reconcilia a `expired`, borra la
+evidencia y rechaza el intento. Ni las sanciones ni la planilla del partido se consultan,
+crean o modifican en este flujo.
+
+`GET /manual-reviews` usa páginas fijas de 25. Un administrador ve todas las revisiones;
+un árbitro únicamente las de sus partidos asignados. Un árbitro no asignado al
+`match_id` consultado recibe una página vacía, sin revelar el partido ni su estado de
+revisión.
+
+```http
+GET /manual-reviews?match_id=12&status=pending&sort=scan_created_at_desc&page=1
+Authorization: Bearer <access-token>
+```
+
+`match_id` es opcional y restringe la colección a los escaneos de ese partido. `status`
+acepta `pending`, `resolved`, `expired` o `all` (por defecto `pending`). `sort` acepta
+`scan_created_at_desc` (valor por defecto) o `scan_created_at_asc`: ordena siempre por
+la fecha persistida del escaneo y, ante empate, por su identificador en la misma
+dirección. Los filtros de partido, estado y rol se aplican antes de contar, ordenar y
+paginar. Parámetros desconocidos, `match_id` o `page` no positivos, o un `sort` no
+admitido devuelven `422 validation_error`.
+
+Cada elemento contiene sólo la competición (`id`, `name`), partido (`id`, horario,
+estado), equipo seleccionado (`id`, `name`), escaneo (`scan.id`, `scan.created_at`),
+cantidad de caras desconocidas, estado y vencimiento. No duplica la fecha del escaneo
+en otro campo y no expone una URL, bytes, referencia de almacenamiento ni metadatos de
+filesystem de la evidencia.
+
+`GET /matches/{match_id}/manual-review-status` sólo admite administrador o árbitro
+asignado. Devuelve `requires_biometric_audit` y los conteos seguros de revisiones
+`pending`, `resolved` y `expired`. El flag se deriva, no se persiste: vale `true` si al
+menos una revisión pendiente no venció, se vuelve `false` cuando todas están resueltas o
+vencidas, y una futura exploración consentida con una cara desconocida puede activarlo de
+nuevo. No cambia la programación ni el estado normal del partido.
 
 ## Historial protegido de escaneos de plantel
 
@@ -729,7 +844,10 @@ usan los contratos Pydantic habituales; valores inválidos responden `422`.
 El detalle y cada elemento del historial conservan el conteo esperado, detectado y
 reconocido, la advertencia de conteo no bloqueante, cajas de caras, identidad y nombre
 instantáneo cuando se reconoció un jugador, porcentaje, estado e instantáneas
-congeladas de sanciones. Nunca devuelven embeddings, referencias o URL de la imagen
+congeladas de sanciones. Cuando corresponde, incluyen sólo el resumen seguro
+`manual_review`: estado, vencimiento, árbitro/fecha de resolución y, sólo después de
+resolverla, decisiones históricas (`face_index`, resultado, jugador y nombre instantáneo
+si corresponde, fecha). Nunca devuelven embeddings, referencias o URL de la imagen
 grupal, bytes de imagen, nombres internos de archivo ni detalles de la base. Una vista
 previa futura de un jugador reconocido debe usar la API ya existente de fotos del
 jugador; no forma parte ni altera este historial.
@@ -893,6 +1011,8 @@ bloqueo de altas de equipos y planteles sólo si no queda otra sanción activa d
 | `503` | Base de datos, almacenamiento de fotos o autenticación temporalmente no disponible. |
 
 Frontend debe decidir con `error.code` y mostrar `error.message` como texto legible.
+Todos los mensajes y detalles de error que devuelve la API están en español; los
+códigos y los nombres de campos permanecen en inglés como identificadores estables.
 Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not_found`,
 `team_not_found`, `player_disabled`, `team_disabled`, `team_sport_mismatch`,
 `team_gender_mismatch` y `team_capacity_reached`. Los de fotos incluyen
@@ -900,7 +1020,18 @@ Los códigos de jugadores y asociaciones incluyen `player_not_found`, `sport_not
 `invalid_face_count`, `face_too_small`, `player_photo_limit_reached`, `invalid_photo`,
 `photo_identity_mismatch`, `initial_reference_photo_required`, `photo_not_found`,
 `photo_processing_unavailable`, `photo_identity_validation_unavailable` y
-`photo_storage_unavailable`.
+`photo_storage_unavailable`. En evidencia de escaneos, una confirmación ausente o falsa
+devuelve `422 validation_error` con detalle `manual_review_confirmation_required`;
+`scan_forbidden` y `group_image_not_available` no revelan rutas, nombres internos ni
+estado de archivos privados. La revisión histórica usa
+`manual_review_referee_required` para un escritor no asignado,
+`manual_review_forbidden` para una lectura no autorizada,
+`manual_review_not_found` para un escaneo sin revisión,
+`manual_review_closed` para una revisión resuelta o vencida,
+`manual_review_decisions_incomplete`, `duplicate_manual_review_face`,
+`duplicate_manual_review_player` y `manual_review_player_not_in_roster` para reglas
+de cierre atómico. Una falla temporal de base o almacenamiento durante este flujo usa
+`manual_review_unavailable` sin exponer datos privados.
 
 ## OpenAPI y Hoppscotch
 
@@ -944,6 +1075,15 @@ cambios de tablas se aplican con Flask-Migrate/Alembic mediante migraciones vers
 - `f2a3b4c5d6e7` agrega el historial auditable de consumos canónicos de sanciones.
 - `d4e5f6a7b8c9` agrega la marca de referencia inicial de las fotos de jugador y
   marca de forma determinista la foto histórica de menor identificador.
+- `a3c4e5f6a7b8` agrega los escaneos inmutables de plantel, caras detectadas e
+  instantáneas de sanciones.
+- `b6e7f8a9b0c1` agrega las revisiones manuales consentidas de evidencia privada,
+  limpia referencias históricas sin confirmación y deja sus archivos para la
+  reconciliación segura del almacenamiento local.
+- `c9d0e1f2a3b4` agrega decisiones manuales históricas por cara desconocida y el
+  auditor de resolución de la revisión, con restricciones de integridad para el
+  jugador seleccionado y su nombre instantáneo; además une las ramas de migración
+  pendientes para mantener una única cabecera Alembic.
 
 Los archivos de las fotos no están en PostgreSQL sino en `PLAYER_PHOTOS_DIR`. Hacer
 downgrade de `29ab530e58fc` elimina la tabla, pero no borra esos archivos.

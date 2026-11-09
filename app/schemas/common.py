@@ -35,11 +35,11 @@ class ErrorResponse(ApiResponse):
                 {
                     "error": {
                         "code": "validation_error",
-                        "message": "Request validation failed.",
+                        "message": "La solicitud contiene datos no válidos.",
                         "details": [
                             {
                                 "field": "body.name",
-                                "message": "Field required",
+                                "message": "Este campo es obligatorio.",
                                 "type": "missing",
                             }
                         ],

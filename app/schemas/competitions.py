@@ -35,7 +35,7 @@ def _validate_date_range(
     if starts_at is not None and ends_at <= starts_at:
         raise PydanticCustomError(
             "competition_date_range_invalid",
-            "Competition end date must be later than its start date.",
+            "La fecha de finalización de la competencia debe ser posterior a la fecha de inicio.",
         )
     return ends_at
 
@@ -48,7 +48,7 @@ class CompetitionTeamRequest(ApiRequest):
     @classmethod
     def reject_duplicate_players(cls, value: list[int]) -> list[int]:
         if len(value) != len(set(value)):
-            raise ValueError("player_ids must not contain duplicate values.")
+            raise ValueError("No se permiten jugadores repetidos.")
         return value
 
 
@@ -60,14 +60,14 @@ class ParticipantsRequest(ApiRequest):
     def validate_participant_counts(self):
         team_ids = [entry.team_id for entry in self.teams]
         if len(team_ids) % 2:
-            raise ValueError("teams must contain an even number of entries.")
+            raise ValueError("La lista de equipos debe tener una cantidad par de elementos.")
         if len(team_ids) != len(set(team_ids)):
-            raise ValueError("team_id values must be unique.")
+            raise ValueError("No se permiten equipos repetidos.")
         if len(self.referee_ids) != len(set(self.referee_ids)):
-            raise ValueError("referee_ids must not contain duplicate values.")
+            raise ValueError("No se permiten árbitros repetidos.")
         if len(self.referee_ids) != len(team_ids) // 2:
             raise ValueError(
-                "referee_ids must contain exactly one referee per two Teams."
+                "Debe indicarse exactamente un árbitro por cada dos equipos."
             )
         return self
 
@@ -116,7 +116,7 @@ class CompetitionListQuery(ApiRequest):
     def validate_start_filter(cls, value: datetime | None, info):
         starts_from = info.data.get("starts_from")
         if value is not None and starts_from is not None and value < starts_from:
-            raise ValueError("starts_to must not be earlier than starts_from.")
+            raise ValueError("La fecha final no puede ser anterior a la fecha inicial.")
         return value
 
 

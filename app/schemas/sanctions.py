@@ -15,12 +15,12 @@ PositiveQueryInteger = Annotated[int, Field(gt=0)]
 def _normalized_required_text(value: object, field_name: str) -> str:
     if not isinstance(value, str):
         raise PydanticCustomError(
-            "string_type", "Input should be a valid string."
+            "string_type", "Debe ser un texto válido."
         )
     normalized = value.strip()
     if not normalized:
         raise PydanticCustomError(
-            "sanction_text_blank", f"{field_name} is required."
+            "sanction_text_blank", f"{field_name} es obligatorio."
         )
     return normalized
 
@@ -71,7 +71,7 @@ class PlayerSanctionListQuery(ApiRequest):
         ):
             raise PydanticCustomError(
                 "timezone_aware_datetime_required",
-                "A timezone-aware datetime is required.",
+                "Se requiere una fecha y hora con zona horaria.",
             )
         return value
 
@@ -84,7 +84,7 @@ class PlayerSanctionListQuery(ApiRequest):
         ):
             raise PydanticCustomError(
                 "sanction_created_date_range_invalid",
-                "created_to must be later than or equal to created_from.",
+                "La fecha final debe ser posterior o igual a la fecha inicial.",
             )
         return self
 

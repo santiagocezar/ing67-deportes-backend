@@ -100,16 +100,16 @@ def upgrade():
         ),
         sa.CheckConstraint("top >= 0", name="ck_match_roster_scan_faces_top"),
         sa.CheckConstraint(
-            "right >= 0", name="ck_match_roster_scan_faces_right"
+            '"right" >= 0', name="ck_match_roster_scan_faces_right"
         ),
         sa.CheckConstraint(
             "bottom >= 0", name="ck_match_roster_scan_faces_bottom"
         ),
         sa.CheckConstraint(
-            "left >= 0", name="ck_match_roster_scan_faces_left"
+            '"left" >= 0', name="ck_match_roster_scan_faces_left"
         ),
         sa.CheckConstraint(
-            "right > left AND bottom > top",
+            '"right" > "left" AND bottom > top',
             name="ck_match_roster_scan_faces_box_order",
         ),
         sa.CheckConstraint(

@@ -19,7 +19,7 @@ def _require_uploaded_file(value: object) -> UploadedFile:
     if not isinstance(value, UploadedFile) or not value.filename:
         raise PydanticCustomError(
             "photo_file_required",
-            "photo must be an uploaded file.",
+            "photo debe ser un archivo adjunto.",
         )
     return value
 

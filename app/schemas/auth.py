@@ -40,16 +40,16 @@ class SignupRequest(ApiRequest):
             < (birthdate.month, birthdate.day)
         )
         if age < 18:
-            raise ValueError("The user must be at least 18 years old.")
+            raise ValueError("La persona usuaria debe tener al menos 18 años.")
         if age > 100:
-            raise ValueError("The user cannot be older than 100 years.")
+            raise ValueError("La persona usuaria no puede tener más de 100 años.")
         return birthdate
 
     @field_validator("email")
     @classmethod
     def validate_email(cls, email: str) -> str:
         if "@" not in email:
-            raise ValueError("email is invalid.")
+            raise ValueError("El correo electrónico no es válido.")
         return email.lower()
 
 
