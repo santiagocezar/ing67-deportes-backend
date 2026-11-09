@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from flask_jwt_extended import create_access_token
+from sqlalchemy.dialects import postgresql
 
 from app.app import create_app
 from app.extensions import db
@@ -252,7 +253,8 @@ class ManualReviewRouteTests(unittest.TestCase):
             ) as get_status,
         ):
             listing = self.client.get(
-                "/manual-reviews?status=resolved&page=2",
+                "/manual-reviews?match_id=7&status=resolved&"
+                "sort=scan_created_at_asc&page=2",
                 headers=self._headers(self.admin_token),
             )
             status = self.client.get(
@@ -263,11 +265,21 @@ class ManualReviewRouteTests(unittest.TestCase):
         self.assertEqual(listing.status_code, 200)
         item = listing.get_json()["manual_reviews"][0]
         self.assertEqual(item["competition"], {"id": 4, "name": "Spring Cup"})
+        self.assertEqual(
+            item["scan"],
+            {"id": 12, "created_at": "2026-11-08T16:00:00Z"},
+        )
         self.assertEqual(item["unknown_face_count"], 2)
         rendered = listing.get_data(as_text=True)
         self.assertNotIn("group_image", rendered)
         self.assertNotIn("file_name", rendered)
+        self.assertEqual(list_reviews.call_args.kwargs["match_id"], 7)
         self.assertEqual(list_reviews.call_args.kwargs["status"], "resolved")
+        self.assertEqual(
+            list_reviews.call_args.kwargs["sort"],
+            "scan_created_at_asc",
+        )
+        self.assertEqual(list_reviews.call_args.kwargs["page"], 2)
         self.assertEqual(list_reviews.call_args.kwargs["actor_role"], "administrator")
 
         self.assertEqual(status.status_code, 200)
@@ -282,6 +294,66 @@ class ManualReviewRouteTests(unittest.TestCase):
             },
         )
         self.assertEqual(get_status.call_args.kwargs["actor_user_id"], 2)
+
+    def test_listing_defaults_and_rejects_invalid_query_filters(self):
+        page = SimpleNamespace(
+            reviews=[],
+            page=1,
+            per_page=25,
+            total_items=0,
+            total_pages=0,
+        )
+        with patch(
+            "app.routes.match_roster_scans.list_match_roster_scan_manual_reviews",
+            return_value=page,
+        ) as list_reviews:
+            default = self.client.get(
+                "/manual-reviews",
+                headers=self._headers(self.admin_token),
+            )
+            invalid_responses = [
+                self.client.get(
+                    "/manual-reviews?match_id=0",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?match_id=not-a-number",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?match_id=1.0",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?sort=review_created_at_desc",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?page=0",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?unexpected=true",
+                    headers=self._headers(self.admin_token),
+                ),
+            ]
+
+        self.assertEqual(default.status_code, 200)
+        self.assertEqual(list_reviews.call_count, 1)
+        self.assertEqual(list_reviews.call_args.kwargs["match_id"], None)
+        self.assertEqual(list_reviews.call_args.kwargs["status"], "pending")
+        self.assertEqual(
+            list_reviews.call_args.kwargs["sort"],
+            "scan_created_at_desc",
+        )
+        self.assertEqual(list_reviews.call_args.kwargs["page"], 1)
+        for response in invalid_responses:
+            with self.subTest(response=response):
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.get_json()["error"]["code"],
+                    "validation_error",
+                )
 
     def test_openapi_documents_manual_review_operations_and_safe_schemas(self):
         contract = self.client.get("/openapi.json").get_json()
@@ -303,6 +375,22 @@ class ManualReviewRouteTests(unittest.TestCase):
         self.assertEqual(
             listing["operationId"], "matchRosterScansManualReviewsList"
         )
+        listing_query = {
+            parameter["name"]: parameter
+            for parameter in listing["parameters"]
+        }
+        self.assertEqual(
+            set(listing_query),
+            {"match_id", "status", "sort", "page"},
+        )
+        self.assertEqual(
+            listing_query["sort"]["schema"]["default"],
+            "scan_created_at_desc",
+        )
+        self.assertEqual(
+            listing_query["sort"]["schema"]["enum"],
+            ["scan_created_at_desc", "scan_created_at_asc"],
+        )
         self.assertEqual(
             status["operationId"], "matchRosterScansManualReviewStatus"
         )
@@ -314,6 +402,15 @@ class ManualReviewRouteTests(unittest.TestCase):
         self.assertNotIn("group_image_file_name", review_fields)
         self.assertNotIn("group_image_content_type", review_fields)
         self.assertNotIn("embedding", review_fields)
+        self.assertNotIn("scan_created_at", review_fields)
+        self.assertEqual(
+            set(
+                contract["components"]["schemas"]["ManualReviewScanResponse"][
+                    "properties"
+                ]
+            ),
+            {"id", "created_at"},
+        )
 
 
 class ManualReviewServiceTests(unittest.TestCase):
@@ -597,6 +694,126 @@ class ManualReviewServiceTests(unittest.TestCase):
         self.assertEqual(page.total_pages, 0)
         reconcile_matches.assert_called_once_with()
         commit.assert_called_once()
+
+    def test_list_applies_match_status_and_referee_filters_before_stable_scan_order(self):
+        expected_orders = {
+            "scan_created_at_desc": (
+                "ORDER BY match_roster_scans.created_at DESC, "
+                "match_roster_scans.id DESC"
+            ),
+            "scan_created_at_asc": (
+                "ORDER BY match_roster_scans.created_at ASC, "
+                "match_roster_scans.id ASC"
+            ),
+        }
+        for sort, expected_order in expected_orders.items():
+            with self.subTest(sort=sort):
+                count_result = MagicMock()
+                count_result.scalar_one.return_value = 26
+                rows_result = MagicMock()
+                rows_result.all.return_value = []
+                with (
+                    patch(
+                        "app.services.match_roster_scan_manual_reviews.reconcile_expired_match_roster_scan_reviews"
+                    ),
+                    patch(
+                        "app.services.match_roster_scan_manual_reviews.reconcile_matches",
+                        return_value=False,
+                    ),
+                    patch.object(
+                        db.session,
+                        "execute",
+                        side_effect=[count_result, rows_result],
+                    ) as execute,
+                ):
+                    page = list_match_roster_scan_manual_reviews(
+                        match_id=7,
+                        status="pending",
+                        sort=sort,
+                        page=2,
+                        actor_user_id=99,
+                        actor_role="referee",
+                    )
+
+                self.assertEqual(page.reviews, [])
+                self.assertEqual(page.total_items, 26)
+                self.assertEqual(page.total_pages, 2)
+                count_sql = str(
+                    execute.call_args_list[0].args[0].compile(
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+                data_sql = str(
+                    execute.call_args_list[1].args[0].compile(
+                        dialect=postgresql.dialect(),
+                        compile_kwargs={"literal_binds": True},
+                    )
+                )
+                for sql in (count_sql, data_sql):
+                    self.assertIn("match_roster_scans.match_id = 7", sql)
+                    self.assertIn(
+                        "match_roster_scan_manual_reviews.status = 'pending'",
+                        sql,
+                    )
+                    self.assertIn("matches.referee_id = 99", sql)
+                self.assertIn(expected_order, data_sql)
+
+    def test_list_rejects_invalid_match_filter_and_sort_before_querying(self):
+        for kwargs, expected_code in (
+            ({"match_id": 0}, "invalid_manual_review_match_id"),
+            ({"sort": "review_created_at_desc"}, "invalid_manual_review_sort"),
+        ):
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaises(ManualReviewServiceError) as raised:
+                    list_match_roster_scan_manual_reviews(
+                        status="pending",
+                        page=1,
+                        actor_user_id=1,
+                        actor_role="administrator",
+                        **kwargs,
+                    )
+                self.assertEqual(raised.exception.code, expected_code)
+
+    def test_list_keeps_exact_metadata_for_an_out_of_range_page(self):
+        count_result = MagicMock()
+        count_result.scalar_one.return_value = 26
+        rows_result = MagicMock()
+        rows_result.all.return_value = []
+        with (
+            patch(
+                "app.services.match_roster_scan_manual_reviews.reconcile_expired_match_roster_scan_reviews"
+            ),
+            patch(
+                "app.services.match_roster_scan_manual_reviews.reconcile_matches",
+                return_value=False,
+            ),
+            patch.object(
+                db.session,
+                "execute",
+                side_effect=[count_result, rows_result],
+            ) as execute,
+        ):
+            page = list_match_roster_scan_manual_reviews(
+                match_id=7,
+                status="all",
+                page=3,
+                actor_user_id=1,
+                actor_role="administrator",
+            )
+
+        self.assertEqual(page.reviews, [])
+        self.assertEqual(page.page, 3)
+        self.assertEqual(page.per_page, MANUAL_REVIEWS_PER_PAGE)
+        self.assertEqual(page.total_items, 26)
+        self.assertEqual(page.total_pages, 2)
+        data_sql = str(
+            execute.call_args_list[1].args[0].compile(
+                dialect=postgresql.dialect(),
+                compile_kwargs={"literal_binds": True},
+            )
+        )
+        self.assertIn("LIMIT 25 OFFSET 50", data_sql)
 
 
 class ManualReviewMigrationTests(unittest.TestCase):

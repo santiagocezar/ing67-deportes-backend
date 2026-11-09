@@ -28,6 +28,10 @@ CountWarning = Literal[
 ]
 ManualReviewStatus = Literal["pending", "resolved", "expired"]
 ManualReviewListStatus = Literal["pending", "resolved", "expired", "all"]
+ManualReviewListSort = Literal[
+    "scan_created_at_desc",
+    "scan_created_at_asc",
+]
 ManualReviewDecisionOutcome = Literal[
     "belongs_to_team",
     "does_not_belong_to_team",
@@ -36,6 +40,26 @@ ManualReviewDecisionOutcome = Literal[
 PositivePathId = Annotated[StrictInt, Field(gt=0)]
 PositiveQueryInteger = Annotated[int, Field(gt=0)]
 NonNegativeInteger = Annotated[StrictInt, Field(ge=0)]
+
+
+def _strict_query_integer(value: object) -> int:
+    """Accept only canonical integer query text before strict validation."""
+
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.isascii() and value.isdecimal():
+        return int(value)
+    raise PydanticCustomError(
+        "int_type",
+        "Debe ser un número entero positivo.",
+    )
+
+
+PositiveStrictQueryInteger = Annotated[
+    StrictInt,
+    BeforeValidator(_strict_query_integer),
+    Field(gt=0),
+]
 
 
 def _require_uploaded_file(value: object) -> UploadedFile:
@@ -80,7 +104,9 @@ class MatchRosterScanListQuery(ApiRequest):
 
 
 class MatchRosterScanManualReviewListQuery(ApiRequest):
+    match_id: PositiveStrictQueryInteger | None = None
     status: ManualReviewListStatus = "pending"
+    sort: ManualReviewListSort = "scan_created_at_desc"
     page: PositiveQueryInteger = 1
 
 

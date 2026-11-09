@@ -3984,6 +3984,23 @@
         "parameters": [
           {
             "in": "query",
+            "name": "match_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Match Id"
+            }
+          },
+          {
+            "in": "query",
             "name": "status",
             "required": false,
             "schema": {
@@ -3995,6 +4012,20 @@
                 "all"
               ],
               "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "scan_created_at_desc",
+              "enum": [
+                "scan_created_at_desc",
+                "scan_created_at_asc"
+              ],
+              "title": "Sort",
               "type": "string"
             }
           },

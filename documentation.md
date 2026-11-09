@@ -792,12 +792,28 @@ evidencia y rechaza el intento. Ni las sanciones ni la planilla del partido se c
 crean o modifican en este flujo.
 
 `GET /manual-reviews` usa páginas fijas de 25. Un administrador ve todas las revisiones;
-un árbitro únicamente las de sus partidos asignados. `status` acepta `pending`,
-`resolved`, `expired` o `all` (por defecto `pending`). Cada elemento contiene sólo la
-competición (`id`, `name`), partido (`id`, horario, estado), equipo seleccionado (`id`,
-`name`), escaneo (`id`, creación), cantidad de caras desconocidas, estado y vencimiento.
-No expone una URL, bytes, referencia de almacenamiento ni metadatos de filesystem de la
-evidencia.
+un árbitro únicamente las de sus partidos asignados. Un árbitro no asignado al
+`match_id` consultado recibe una página vacía, sin revelar el partido ni su estado de
+revisión.
+
+```http
+GET /manual-reviews?match_id=12&status=pending&sort=scan_created_at_desc&page=1
+Authorization: Bearer <access-token>
+```
+
+`match_id` es opcional y restringe la colección a los escaneos de ese partido. `status`
+acepta `pending`, `resolved`, `expired` o `all` (por defecto `pending`). `sort` acepta
+`scan_created_at_desc` (valor por defecto) o `scan_created_at_asc`: ordena siempre por
+la fecha persistida del escaneo y, ante empate, por su identificador en la misma
+dirección. Los filtros de partido, estado y rol se aplican antes de contar, ordenar y
+paginar. Parámetros desconocidos, `match_id` o `page` no positivos, o un `sort` no
+admitido devuelven `422 validation_error`.
+
+Cada elemento contiene sólo la competición (`id`, `name`), partido (`id`, horario,
+estado), equipo seleccionado (`id`, `name`), escaneo (`scan.id`, `scan.created_at`),
+cantidad de caras desconocidas, estado y vencimiento. No duplica la fecha del escaneo
+en otro campo y no expone una URL, bytes, referencia de almacenamiento ni metadatos de
+filesystem de la evidencia.
 
 `GET /matches/{match_id}/manual-review-status` sólo admite administrador o árbitro
 asignado. Devuelve `requires_biometric_audit` y los conteos seguros de revisiones

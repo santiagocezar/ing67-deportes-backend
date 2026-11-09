@@ -505,7 +505,9 @@ def put_roster_scan_manual_review(
 def get_manual_reviews(query: MatchRosterScanManualReviewListQuery):
     try:
         result = list_match_roster_scan_manual_reviews(
+            match_id=query.match_id,
             status=query.status,
+            sort=query.sort,
             page=query.page,
             actor_user_id=int(get_jwt_identity()),
             actor_role=str(get_jwt().get("role", "")),

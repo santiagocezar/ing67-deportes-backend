@@ -36,6 +36,9 @@ from .matches import reconcile_matches
 
 MANUAL_REVIEWS_PER_PAGE = 25
 MANUAL_REVIEW_OUTCOMES = frozenset(MANUAL_REVIEW_DECISION_OUTCOMES)
+MANUAL_REVIEW_LIST_SORTS = frozenset(
+    {"scan_created_at_desc", "scan_created_at_asc"}
+)
 
 
 class ManualReviewServiceError(Exception):
@@ -416,6 +419,8 @@ def finalize_match_roster_scan_manual_review(
 def list_match_roster_scan_manual_reviews(
     *,
     status: str,
+    match_id: int | None = None,
+    sort: str = "scan_created_at_desc",
     page: int,
     actor_user_id: int,
     actor_role: str,
@@ -433,6 +438,20 @@ def list_match_roster_scan_manual_reviews(
             "The requested manual review status is invalid.",
             422,
         )
+    if match_id is not None and (
+        not _is_integer(match_id) or match_id <= 0
+    ):
+        raise ManualReviewServiceError(
+            "invalid_manual_review_match_id",
+            "The requested Match is invalid.",
+            422,
+        )
+    if sort not in MANUAL_REVIEW_LIST_SORTS:
+        raise ManualReviewServiceError(
+            "invalid_manual_review_sort",
+            "The requested manual review order is invalid.",
+            422,
+        )
     if not _is_integer(page) or page <= 0:
         raise ManualReviewServiceError(
             "invalid_manual_review_page",
@@ -446,8 +465,21 @@ def list_match_roster_scan_manual_reviews(
     filters = []
     if status != "all":
         filters.append(MatchRosterScanManualReview.status == status)
+    if match_id is not None:
+        filters.append(MatchRosterScan.match_id == match_id)
     if actor_role == DEFAULT_USER_ROLE:
         filters.append(Match.referee_id == actor_user_id)
+
+    if sort == "scan_created_at_asc":
+        order_by = (
+            MatchRosterScan.created_at.asc(),
+            MatchRosterScan.id.asc(),
+        )
+    else:
+        order_by = (
+            MatchRosterScan.created_at.desc(),
+            MatchRosterScan.id.desc(),
+        )
 
     unknown_face_count = (
         db.select(func.count())
@@ -500,10 +532,7 @@ def list_match_roster_scan_manual_reviews(
         .join(Competition, Competition.id == Match.competition_id)
         .join(Team, Team.id == MatchRosterScan.team_id)
         .where(*filters)
-        .order_by(
-            MatchRosterScanManualReview.created_at.desc(),
-            MatchRosterScanManualReview.scan_id.desc(),
-        )
+        .order_by(*order_by)
         .limit(MANUAL_REVIEWS_PER_PAGE)
         .offset((page - 1) * MANUAL_REVIEWS_PER_PAGE)
     ).all()
