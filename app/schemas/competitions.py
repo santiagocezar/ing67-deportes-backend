@@ -120,6 +120,32 @@ class CompetitionListQuery(ApiRequest):
         return value
 
 
+class RosterImportQuery(ApiRequest):
+    source_competition_id: PositiveQueryInteger
+
+
+class RosterImportPlayer(ApiResponse):
+    player_id: int
+    name: str
+
+
+class RosterImportTeam(ApiResponse):
+    team_id: int
+    name: str
+    players: list[RosterImportPlayer]
+
+
+class RosterImportCompetition(ApiResponse):
+    id: int
+    name: str
+
+
+class RosterImportResponse(ApiResponse):
+    source: RosterImportCompetition
+    destination: RosterImportCompetition
+    teams: list[RosterImportTeam]
+
+
 class RosterPlayerResponse(ApiResponse):
     id: int
     name: str

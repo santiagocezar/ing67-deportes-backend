@@ -1103,6 +1103,7 @@ exclusivas del administrador.
 | `GET /competitions/{id}` | Consultar detalle y snapshots | `200` |
 | `PUT /competitions/{id}` | Cambiar nombre e intervalo | `200` |
 | `PUT /competitions/{id}/participants` | Corregir todos los participantes | `200` |
+| `GET /competitions/{id}/roster-import-options?source_competition_id={id}` | Consultar planteles históricos elegibles | `200` |
 | `PATCH /competitions/{id}/disable` | Deshabilitar sin borrar | `200` |
 | `PATCH /competitions/{id}/enable` | Rehabilitar cuando corresponde | `200` |
 | `POST /competitions/{id}/matches/randomize` | Crear o repetir el sorteo | `200` |
@@ -1112,6 +1113,17 @@ exclusivas del administrador.
 | `GET /referees` | Buscar árbitros para el alta | `200` |
 
 ### Alta y participantes
+
+La consulta de planteles importables es exclusiva del administrador. El destino debe
+estar habilitado y sin partidos; el origen debe estar finalizado y tener el mismo
+deporte y género. Solo devuelve equipos presentes en ambos torneos cuyos planteles
+históricos completos conservan membresía, habilitación, tamaño válido y jugadores sin
+sanción activa. La respuesta incluye `source`, `destination` y `teams`, con los
+identificadores y nombres de equipos y jugadores. Las sanciones se reconcilian antes
+de la consulta. Esta no inscribe jugadores: el cliente prepara la selección y guarda
+todos los participantes con `PUT /competitions/{id}/participants`, que valida de
+nuevo las reglas en una transacción. Una lista `teams` vacía significa que no hay
+planteles elegibles.
 
 La competición se crea en una única transacción. No existe inscripción progresiva:
 se envía una cantidad par de equipos entre 4 y 16, el plantel completo de cada uno y

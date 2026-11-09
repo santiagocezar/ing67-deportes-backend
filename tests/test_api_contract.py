@@ -619,6 +619,7 @@ class ApiContractTests(unittest.TestCase):
                 "/competitions",
                 "/competitions/{competition_id}",
                 "/competitions/{competition_id}/participants",
+                "/competitions/{competition_id}/roster-import-options",
                 "/competitions/{competition_id}/disable",
                 "/competitions/{competition_id}/enable",
                 "/competitions/{competition_id}/matches",
@@ -645,8 +646,8 @@ class ApiContractTests(unittest.TestCase):
             for operation in path_item.values()
         ]
         operation_ids = [operation["operationId"] for operation in operations]
-        self.assertEqual(len(operation_ids), 51)
-        self.assertEqual(len(set(operation_ids)), 51)
+        self.assertEqual(len(operation_ids), 52)
+        self.assertEqual(len(set(operation_ids)), 52)
         self.assertNotIn(
             "security",
             contract["paths"]["/auth/signup"]["post"],

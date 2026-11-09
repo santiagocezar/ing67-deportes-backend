@@ -15,6 +15,8 @@ from ..schemas.competitions import (
     CompetitionSummaryResponse,
     CompetitionTeamResponse,
     ParticipantsRequest,
+    RosterImportQuery,
+    RosterImportResponse,
     RefereeSummaryResponse,
     RosterPlayerResponse,
     CompetitionUpdateRequest,
@@ -25,6 +27,7 @@ from ..services.competitions import (
     get_competition,
     list_competitions,
     replace_participants,
+    roster_import_options,
     set_competition_enabled,
     update_competition,
 )
@@ -235,6 +238,36 @@ def put_competition(
     except SQLAlchemyError:
         return _database_unavailable("update")
     payload = competition_detail_response(competition)
+    return jsonify(payload.model_dump(mode="json")), 200
+
+
+@competitions_bp.get(
+    "/<int:competition_id>/roster-import-options",
+    summary="List eligible historical rosters",
+    operation_id="competitionsRosterImportOptions",
+    security=ACCESS_SECURITY,
+    responses={
+        200: RosterImportResponse,
+        401: ErrorResponse,
+        403: ErrorResponse,
+        404: ErrorResponse,
+        409: ErrorResponse,
+        422: ErrorResponse,
+        503: ErrorResponse,
+    },
+)
+@administrator_required
+@validate_request()
+def get_roster_import_options(path: CompetitionPath, query: RosterImportQuery):
+    try:
+        result = roster_import_options(
+            path.competition_id, query.source_competition_id
+        )
+    except CompetitionServiceError as error:
+        return _service_error(error)
+    except SQLAlchemyError:
+        return _database_unavailable("list roster import options")
+    payload = RosterImportResponse.model_validate(result)
     return jsonify(payload.model_dump(mode="json")), 200
 
 

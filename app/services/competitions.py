@@ -12,6 +12,7 @@ from ..models import (
     CompetitionRosterPlayer,
     CompetitionTeam,
     Sport,
+    team_players,
 )
 from ..schemas.competitions import (
     CompetitionCreateRequest,
@@ -111,6 +112,96 @@ def _validate_future_end(ends_at: datetime, now: datetime) -> None:
             "Competition end date must be in the future.",
             422,
         )
+
+
+def roster_import_options(competition_id: int, source_id: int) -> dict:
+    """Return complete historical rosters that still satisfy enrollment rules."""
+    from .sanctions import reconcile_player_sanctions_batch
+
+    try:
+        now = utc_now()
+        for identifier in sorted({competition_id, source_id}):
+            lock_competition(identifier)
+            reconcile_competitions(now, competition_id=identifier)
+        destination = _load_competition(competition_id)
+        source = _load_competition(source_id)
+        if not destination.is_enabled:
+            raise CompetitionServiceError(
+                "competition_disabled", "The destination is disabled."
+            )
+        if has_matches(competition_id):
+            raise CompetitionServiceError(
+                "competition_has_matches", "The destination already has Matches."
+            )
+        if source_id == competition_id:
+            raise CompetitionServiceError(
+                "import_same_competition", "Source and destination must differ.", 422
+            )
+        if source.status != "finished":
+            raise CompetitionServiceError(
+                "import_source_not_finished", "The source Competition must be finished."
+            )
+        if (source.sport_id, source.gender) != (destination.sport_id, destination.gender):
+            raise CompetitionServiceError(
+                "import_competition_mismatch",
+                "Competitions must have the same Sport and gender.",
+                422,
+            )
+
+        destination_teams = {entry.team_id for entry in destination.team_entries}
+        entries = [
+            entry for entry in source.team_entries if entry.team_id in destination_teams
+        ]
+        player_ids = sorted(
+            {item.player.id for entry in entries for item in entry.roster_entries}
+        )
+        sanctions = reconcile_player_sanctions_batch(player_ids)
+        memberships = set(
+            db.session.execute(
+                db.select(team_players.c.team_id, team_players.c.player_id).where(
+                    team_players.c.team_id.in_(destination_teams),
+                    team_players.c.player_id.in_(player_ids),
+                )
+            ).all()
+        )
+        teams = []
+        for entry in entries:
+            players = [item.player for item in entry.roster_entries]
+            if (
+                not entry.team.is_enabled
+                or entry.team.sport_id != destination.sport_id
+                or entry.team.gender_category != destination.gender
+                or not (
+                    destination.sport.max_players_in_game
+                    <= len(players)
+                    <= destination.sport.max_players
+                )
+            ):
+                continue
+            if any(
+                not player.is_enabled
+                or player.sport_id != destination.sport_id
+                or player.gender != destination.gender
+                or (entry.team_id, player.id) not in memberships
+                or sanctions.get(player.id, False)
+                for player in players
+            ):
+                continue
+            teams.append({
+                "team_id": entry.team_id,
+                "name": entry.team.name,
+                "players": [{"player_id": p.id, "name": p.name} for p in players],
+            })
+        result = {
+            "source": {"id": source.id, "name": source.name},
+            "destination": {"id": destination.id, "name": destination.name},
+            "teams": teams,
+        }
+        db.session.commit()
+        return result
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 def create_competition(data: CompetitionCreateRequest) -> Competition:
