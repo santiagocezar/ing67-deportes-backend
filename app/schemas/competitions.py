@@ -151,6 +151,7 @@ class RosterPlayerResponse(ApiResponse):
     name: str
     gender: CompetitionGender
     is_enabled: bool
+    primary_photo_path: str | None = None
 
 
 class CompetitionTeamResponse(ApiResponse):
