@@ -52,7 +52,6 @@ def _database_unavailable(operation: str):
     summary="List sports",
     description="Returns every sport ordered by identifier.",
     operation_id="sportsList",
-    security=ACCESS_SECURITY,
     responses={
         200: SportListResponse,
         401: ErrorResponse,
@@ -61,7 +60,6 @@ def _database_unavailable(operation: str):
         503: ErrorResponse,
     },
 )
-@administrator_required
 @validate_request()
 def get_sports():
     try:

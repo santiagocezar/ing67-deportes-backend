@@ -112,7 +112,6 @@ def post_team(body: TeamCreateRequest):
         503: ErrorResponse,
     },
 )
-@administrator_required
 @validate_request()
 def get_teams(query: TeamListQuery):
     try:

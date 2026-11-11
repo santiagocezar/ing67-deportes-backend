@@ -32,7 +32,7 @@ from ..services.player_photos import (
     list_player_photos,
 )
 from ..services.players import PlayerDisabledError, PlayerNotFoundError
-from .authorization import ACCESS_SECURITY, administrator_required
+from .authorization import ACCESS_SECURITY, administrator_required, authenticated_user_required
 from .players import PLAYERS_TAG
 
 
@@ -214,7 +214,7 @@ def post_player_photo(path: PlayerPath, form: PlayerPhotoUploadForm):
         503: ErrorResponse,
     },
 )
-@administrator_required
+@authenticated_user_required
 @validate_request()
 def get_player_photos(path: PlayerPath):
     try:
