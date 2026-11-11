@@ -420,6 +420,7 @@ def list_match_roster_scan_manual_reviews(
     *,
     status: str,
     match_id: int | None = None,
+    sport_id: int | None = None,
     sort: str = "scan_created_at_desc",
     page: int,
     actor_user_id: int,
@@ -446,6 +447,14 @@ def list_match_roster_scan_manual_reviews(
             "The requested Match is invalid.",
             422,
         )
+    if sport_id is not None and (
+        not _is_integer(sport_id) or sport_id <= 0
+    ):
+        raise ManualReviewServiceError(
+            "invalid_manual_review_sport_id",
+            "The requested Sport is invalid.",
+            422,
+        )
     if sort not in MANUAL_REVIEW_LIST_SORTS:
         raise ManualReviewServiceError(
             "invalid_manual_review_sort",
@@ -467,6 +476,8 @@ def list_match_roster_scan_manual_reviews(
         filters.append(MatchRosterScanManualReview.status == status)
     if match_id is not None:
         filters.append(MatchRosterScan.match_id == match_id)
+    if sport_id is not None:
+        filters.append(Competition.sport_id == sport_id)
     if actor_role == DEFAULT_USER_ROLE:
         filters.append(Match.referee_id == actor_user_id)
 
@@ -498,6 +509,7 @@ def list_match_roster_scan_manual_reviews(
             MatchRosterScan.id == MatchRosterScanManualReview.scan_id,
         )
         .join(Match, Match.id == MatchRosterScan.match_id)
+        .join(Competition, Competition.id == Match.competition_id)
         .where(*filters)
     )
     total_items = db.session.execute(

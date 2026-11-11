@@ -105,6 +105,7 @@ class MatchRosterScanListQuery(ApiRequest):
 
 class MatchRosterScanManualReviewListQuery(ApiRequest):
     match_id: PositiveStrictQueryInteger | None = None
+    sport_id: PositiveStrictQueryInteger | None = None
     status: ManualReviewListStatus = "pending"
     sort: ManualReviewListSort = "scan_created_at_desc"
     page: PositiveQueryInteger = 1
