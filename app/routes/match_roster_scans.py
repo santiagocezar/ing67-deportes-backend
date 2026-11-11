@@ -506,6 +506,7 @@ def get_manual_reviews(query: MatchRosterScanManualReviewListQuery):
     try:
         result = list_match_roster_scan_manual_reviews(
             match_id=query.match_id,
+            sport_id=query.sport_id,
             status=query.status,
             sort=query.sort,
             page=query.page,

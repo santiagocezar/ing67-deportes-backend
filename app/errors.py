@@ -130,6 +130,7 @@ _ERROR_MESSAGES: dict[str, str] = {
     "invalid_manual_review_evidence": "La evidencia privada de la revisión manual no es válida.",
     "invalid_manual_review_status": "El estado de revisión manual indicado no es válido.",
     "invalid_manual_review_match_id": "El partido indicado para la revisión manual no es válido.",
+    "invalid_manual_review_sport_id": "El deporte indicado para la revisión manual no es válido.",
     "invalid_manual_review_sort": "El orden indicado para la revisión manual no es válido.",
     "invalid_manual_review_page": "La página solicitada no es válida.",
 }

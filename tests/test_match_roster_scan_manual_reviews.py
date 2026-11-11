@@ -253,7 +253,7 @@ class ManualReviewRouteTests(unittest.TestCase):
             ) as get_status,
         ):
             listing = self.client.get(
-                "/manual-reviews?match_id=7&status=resolved&"
+                "/manual-reviews?match_id=7&sport_id=3&status=resolved&"
                 "sort=scan_created_at_asc&page=2",
                 headers=self._headers(self.admin_token),
             )
@@ -274,6 +274,7 @@ class ManualReviewRouteTests(unittest.TestCase):
         self.assertNotIn("group_image", rendered)
         self.assertNotIn("file_name", rendered)
         self.assertEqual(list_reviews.call_args.kwargs["match_id"], 7)
+        self.assertEqual(list_reviews.call_args.kwargs["sport_id"], 3)
         self.assertEqual(list_reviews.call_args.kwargs["status"], "resolved")
         self.assertEqual(
             list_reviews.call_args.kwargs["sort"],
@@ -325,6 +326,18 @@ class ManualReviewRouteTests(unittest.TestCase):
                     headers=self._headers(self.admin_token),
                 ),
                 self.client.get(
+                    "/manual-reviews?sport_id=0",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?sport_id=not-a-number",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
+                    "/manual-reviews?sport_id=1.0",
+                    headers=self._headers(self.admin_token),
+                ),
+                self.client.get(
                     "/manual-reviews?sort=review_created_at_desc",
                     headers=self._headers(self.admin_token),
                 ),
@@ -341,6 +354,7 @@ class ManualReviewRouteTests(unittest.TestCase):
         self.assertEqual(default.status_code, 200)
         self.assertEqual(list_reviews.call_count, 1)
         self.assertEqual(list_reviews.call_args.kwargs["match_id"], None)
+        self.assertEqual(list_reviews.call_args.kwargs["sport_id"], None)
         self.assertEqual(list_reviews.call_args.kwargs["status"], "pending")
         self.assertEqual(
             list_reviews.call_args.kwargs["sort"],
@@ -381,7 +395,7 @@ class ManualReviewRouteTests(unittest.TestCase):
         }
         self.assertEqual(
             set(listing_query),
-            {"match_id", "status", "sort", "page"},
+            {"match_id", "sport_id", "status", "sort", "page"},
         )
         self.assertEqual(
             listing_query["sort"]["schema"]["default"],
@@ -695,7 +709,7 @@ class ManualReviewServiceTests(unittest.TestCase):
         reconcile_matches.assert_called_once_with()
         commit.assert_called_once()
 
-    def test_list_applies_match_status_and_referee_filters_before_stable_scan_order(self):
+    def test_list_applies_match_sport_status_and_referee_filters_before_stable_scan_order(self):
         expected_orders = {
             "scan_created_at_desc": (
                 "ORDER BY match_roster_scans.created_at DESC, "
@@ -728,6 +742,7 @@ class ManualReviewServiceTests(unittest.TestCase):
                 ):
                     page = list_match_roster_scan_manual_reviews(
                         match_id=7,
+                        sport_id=3,
                         status="pending",
                         sort=sort,
                         page=2,
@@ -752,6 +767,7 @@ class ManualReviewServiceTests(unittest.TestCase):
                 )
                 for sql in (count_sql, data_sql):
                     self.assertIn("match_roster_scans.match_id = 7", sql)
+                    self.assertIn("competitions.sport_id = 3", sql)
                     self.assertIn(
                         "match_roster_scan_manual_reviews.status = 'pending'",
                         sql,
@@ -762,6 +778,7 @@ class ManualReviewServiceTests(unittest.TestCase):
     def test_list_rejects_invalid_match_filter_and_sort_before_querying(self):
         for kwargs, expected_code in (
             ({"match_id": 0}, "invalid_manual_review_match_id"),
+            ({"sport_id": 0}, "invalid_manual_review_sport_id"),
             ({"sort": "review_created_at_desc"}, "invalid_manual_review_sort"),
         ):
             with self.subTest(kwargs=kwargs):

@@ -797,16 +797,19 @@ un árbitro únicamente las de sus partidos asignados. Un árbitro no asignado a
 revisión.
 
 ```http
-GET /manual-reviews?match_id=12&status=pending&sort=scan_created_at_desc&page=1
+GET /manual-reviews?match_id=12&sport_id=3&status=pending&sort=scan_created_at_desc&page=1
 Authorization: Bearer <access-token>
 ```
 
-`match_id` es opcional y restringe la colección a los escaneos de ese partido. `status`
-acepta `pending`, `resolved`, `expired` o `all` (por defecto `pending`). `sort` acepta
-`scan_created_at_desc` (valor por defecto) o `scan_created_at_asc`: ordena siempre por
-la fecha persistida del escaneo y, ante empate, por su identificador en la misma
-dirección. Los filtros de partido, estado y rol se aplican antes de contar, ordenar y
-paginar. Parámetros desconocidos, `match_id` o `page` no positivos, o un `sort` no
+`match_id` es opcional y restringe la colección a los escaneos de ese partido.
+`sport_id` también es opcional y la restringe a las competencias de ese deporte, tanto
+para administradores como para árbitros (`referee`); en este último caso se conserva
+además el alcance a sus partidos asignados. `status` acepta `pending`, `resolved`,
+`expired` o `all` (por defecto `pending`). `sort` acepta `scan_created_at_desc` (valor
+por defecto) o `scan_created_at_asc`: ordena siempre por la fecha persistida del
+escaneo y, ante empate, por su identificador en la misma dirección. Los filtros de
+partido, deporte, estado y rol se aplican antes de contar, ordenar y paginar.
+Parámetros desconocidos, `match_id`, `sport_id` o `page` no positivos, o un `sort` no
 admitido devuelven `422 validation_error`.
 
 Cada elemento contiene sólo la competición (`id`, `name`), partido (`id`, horario,
