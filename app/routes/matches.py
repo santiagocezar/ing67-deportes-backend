@@ -55,7 +55,7 @@ def _team_response(entry) -> CompetitionTeamResponse:
                 name=item.player.name,
                 gender=item.player.gender,
                 is_enabled=item.player.is_enabled,
-                primary_photo_path=f"/players/{item.player.id}/photos/{item.player.photos[-1].id}",
+                primary_photo_path=f"/players/{item.player.id}/photos/{item.player.photos[-1].id}" if len(item.player.photos) > 0 else None,
             )
             for item in entry.roster_entries
         ],
